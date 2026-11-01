@@ -1775,7 +1775,29 @@ def yard_fence_lines(items, lines, x0, y0, frame, ground):
     return out
 
 
-def collision_mesh(specs_and_ground):
+def yard_road_lines(frame, road_layers, x0, y0):
+    """[(centreline (k, 2) in the anchor frame, half width)] of the drivable roads of these cells (yard fences keep
+    off them; road_tile gets the same from its caller when it has them)."""
+    import roads as roadsmod
+    out = []
+    for f in road_layers:
+        if f is None or len(f.kind) == 0:
+            continue
+        specs = roadsmod.road_specs(f)
+        for i, sp in enumerate(specs):
+            if sp is None or sp.kind not in roadsmod.BUILT:
+                continue
+            a = f.coord_off[f.ring_off[f.part_off[i]]]
+            b = f.coord_off[f.ring_off[f.part_off[i + 1]]]
+            if b - a < 2:
+                continue
+            pts = np.asarray(f.lonlat[a:b], np.float64)[:, :2]
+            e, n, _ = frame.geodetic_to_enu(pts[:, 1], pts[:, 0], 0.0)
+            out.append((np.stack([np.asarray(e), np.asarray(n)], axis=1), float(sp.width) / 2.0))
+    return out
+
+
+def collision_mesh(specs_and_ground, fences=()):
     """The tile's buildings for physics only: one quad per wall and a flat lid at the eaves (pitched roofs on their
     oriented box), parking decks as drawn; (positions, uvs, tris, tri materials, MATERIALS, colours) or None.
     The drawn mesh (windows a quad per bay and floor, cornices, signs) cost the game's collision rebuild ~30 ms of
@@ -1806,6 +1828,20 @@ def collision_mesh(specs_and_ground):
         m.poly([(p[0], p[1], z1) for p in ring], [zero] * len(ring), tok)
         if mh > 0.5:                # over a street: its underside
             m.poly([(p[0], p[1], z0) for p in ring[::-1]], [zero] * len(ring), tok)
+    if fences:                                  # the fences: a thin wall each, so they stop a car
+        ftok = (MATERIALS.index(PANEL), (150, 148, 140, 255))
+        for xy, z, h, _tok in fences:
+            for k in range(len(xy) - 1):
+                a, b = np.asarray(xy[k], np.float64), np.asarray(xy[k + 1], np.float64)
+                za, zb = float(z[k]), float(z[k + 1])
+                d = b - a
+                L = float(np.hypot(*d))
+                if L < 0.2:
+                    continue
+                ox, oy = -d[1] / L * 0.05, d[0] / L * 0.05
+                A = (a[0] + ox, a[1] + oy, za); B = (b[0] + ox, b[1] + oy, zb)
+                Cc = (b[0] + ox, b[1] + oy, zb + h); D = (a[0] + ox, a[1] + oy, za + h)
+                m.quad(A, B, Cc, D, (0.0, 0.0), (L / 2.0, 0.0), (L / 2.0, 1.0), (0.0, 1.0), ftok)
     if m.n == 0:
         return None
     P, UV, T, M, C = m.arrays()
@@ -3170,11 +3206,14 @@ def road_tile(frame, tx, ty, md, ground, lines=None, props=None, items=None):
     if props is not None and lines:
         props.extend(doors(items, lines, x0, y0))
     meshes = build_parts(items, with_lod=True)
+    fences = ()
     try:                                    # the mapped fences and walls: one more mesh part of the same tile
-        infra = [md.cell(k, layers=("infrastructure",), kind="demand").layers.get("infrastructure")
-                 for k in roads.cells_of_tile(frame, tx, ty, margin=0.0)]
+        cells = roads.cells_of_tile(frame, tx, ty, margin=0.0)
+        infra = [md.cell(k, layers=("infrastructure",), kind="demand").layers.get("infrastructure") for k in cells]
         fences = fence_lines(frame, infra, x0, y0, ground)
-        fences += yard_fence_lines(items, lines or (), x0, y0, frame, ground)
+        yards_off = lines if lines else yard_road_lines(frame, [md.cell(k, layers=("roads",), kind="demand")
+                                                               .layers.get("roads") for k in cells], x0, y0)
+        fences += yard_fence_lines(items, yards_off, x0, y0, frame, ground)
         fm = fence_mesh(fences)
         if fm is not None:                  # into the first part: a tile's parts are capped (roads.BLD_PARTS_MAX)
             if meshes:
@@ -3187,7 +3226,7 @@ def road_tile(frame, tx, ty, md, ground, lines=None, props=None, items=None):
         pass
     if not meshes:
         return None
-    return meshes, collider_boxes(items, x0, y0), collision_mesh(items)
+    return meshes, collider_boxes(items, x0, y0), collision_mesh(items, fences)
 
 
 FAR_LAYERS = ("buildings", "building_parts", "infrastructure", "roads", "water")
