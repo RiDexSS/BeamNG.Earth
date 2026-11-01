@@ -46,7 +46,7 @@ log = logging.getLogger("earthd.mapdata")
 # The pinned Overture release (update path: docs/ARCHITECTURE.md "Map data"; `mapdata.py --latest`
 # prints the newest one). Overture removes old releases from the buckets after some months: a
 # pinned release that is gone raises ReleaseGone for cells not cached yet.
-RELEASE = "2026-09-23.1"
+RELEASE = "2026-10-21.0"   # (local: the 2026-09-23.1 release has no roundabout geometry)
 STAC_ROOT = "https://stac.overturemaps.org"
 DUCKDB_THREADS = 2              # DuckDB worker threads per query (the server is niced; the game comes first)
 REMOTE_FILES = 32               # open RemoteFiles kept (their blocks share rangeread's memory LRU)
@@ -247,7 +247,9 @@ class StacIndex:
             raw = self._json(f"{STAC_ROOT}/{self.release}/{theme}/{typ}/collection.json",
                              os.path.join(self._dir(theme, typ), "collection.json"), kind)
             items = [link["href"] for link in raw["links"] if link.get("rel") == "item"]
-            bboxes = raw["extent"]["spatial"]["bbox"][1:]
+            bboxes = raw["extent"]["spatial"]["bbox"]
+            if len(bboxes) == len(items) + 1:   # (the first is the whole collection's: 2026-10-21.0 lists only it
+                bboxes = bboxes[1:]             #  for a single-file collection)
             if len(items) != len(bboxes):
                 raise OvertureError(f"STAC {theme}/{typ}: {len(items)} items but {len(bboxes)} file boxes")
             c = {"items": items, "bboxes": bboxes, "license": raw.get("license")}

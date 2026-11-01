@@ -68,6 +68,12 @@ def code_key():
                             h.update(name.encode() + b"\0" + f.read())
                     except OSError:
                         pass
+            try:                                        # hand fixes change what a cell builds (roads.overrides)
+                import roads
+                with open(roads.overrides_path(), "rb") as f:
+                    h.update(f.read())
+            except OSError:
+                pass
             for k in sorted(os.environ):                # (the build switches: BNE_*)
                 if k.startswith("BNE_") and k not in ("BNE_REVISIT", "BNE_REVISIT_MB", "BNE_REVISIT_SKIP"):
                     h.update(f"{k}={os.environ[k]}".encode())

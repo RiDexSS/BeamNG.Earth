@@ -1554,6 +1554,97 @@ def _steel_frame(m, spec, gmin, mat, lite=False, legs_only=False):
                 _box(m, c + v * sy * (hw - t), u, hl - 2 * t, b, z - b, z + b, mat)
 
 
+# Fences and walls from the map (Overture infrastructure: OSM barrier=fence / wall / hedge / guard_rail, and the
+# retaining walls): thin quads along the line, drawn into the tile's own building mesh so they collide as drawn.
+FENCE_CLASSES = {"fence", "wall", "hedge", "guard_rail", "retaining_wall", "city_wall", "barrier"}
+FENCE_H_M = {"fence": 1.8, "wall": 2.2, "hedge": 1.5, "guard_rail": 0.8, "retaining_wall": 1.2,
+             "city_wall": 2.5, "barrier": 1.5}
+FENCE_TOKENS = {"hedge": (STUCCO, (92, 122, 78, 255)), "fence": (METALWALL, (150, 148, 140, 255)),
+                "guard_rail": (METALWALL, (176, 180, 184, 255)), "retaining_wall": (CONCRETE, (198, 192, 182, 255)),
+                "city_wall": (CONCRETE, (205, 200, 190, 255)), "wall": (CONCRETE, (210, 205, 196, 255)),
+                "barrier": (CONCRETE, (214, 210, 202, 255))}
+FENCE_ON = os.environ.get("BNE_FENCES", "on") != "off"
+FENCE_MIN_M, FENCE_MAX_M = 0.4, 3.0     # m: a mapped barrier shorter than the first or taller than the second is odd data
+FENCE_MARGIN_M = 4.0
+
+
+def fence_lines(frame, infra_layers, x0, y0, ground, size=256.0, margin=FENCE_MARGIN_M):
+    """[(xy (k, 2) relative to (x0, y0), z (k,), height m, material token)] of the mapped fences and walls near the
+    tile: Overture infrastructure lines of FENCE_CLASSES, their heights from FENCE_H_M (a mapped height tag wins).
+    Parts whose box misses the tile are left out; a part crossing it is drawn whole (the next tile draws it too)."""
+    out = []
+    if not FENCE_ON:
+        return out
+    for f in infra_layers:
+        if f is None or len(f.kind) == 0:
+            continue
+        cls = f.attrs.get("class")
+        if cls is None:
+            continue
+        bb = f.boxes(frame)
+        near = np.flatnonzero((bb[:, 2] - x0 >= -margin) & (bb[:, 0] - x0 <= size + margin)
+                              & (bb[:, 3] - y0 >= -margin) & (bb[:, 1] - y0 <= size + margin))
+        for i in near.tolist():
+            c = str(cls[i])
+            if c not in FENCE_CLASSES or f.kind[i] != 2:        # (2: mapgeom.LINE)
+                continue
+            h = FENCE_H_M.get(c, 1.5)
+            tags = f.attrs.get("tags")
+            if tags is not None:
+                try:
+                    import json
+                    ht = json.loads(str(tags[i])).get("height")
+                    if ht is not None:
+                        h = float(str(ht).replace("m", "").strip() or h)
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            h = float(np.clip(h, FENCE_MIN_M, FENCE_MAX_M))
+            tok = FENCE_TOKENS.get(c, FENCE_TOKENS["barrier"])
+            a = f.coord_off[f.ring_off[f.part_off[i]]]
+            b = f.coord_off[f.ring_off[f.part_off[i + 1]]]
+            ring = np.asarray(f.lonlat[a:b], np.float64)
+            if len(ring) < 2:
+                continue
+            lat, lon = ring[:, 1], ring[:, 0]
+            e, n, _ = frame.geodetic_to_enu(lat, lon, 0.0)
+            xy = np.stack([np.asarray(e, np.float64) - x0, np.asarray(n, np.float64) - y0], axis=1)
+            if (xy[:, 0].max() < -margin or xy[:, 0].min() > size + margin
+                    or xy[:, 1].max() < -margin or xy[:, 1].min() > size + margin):
+                continue
+            z = np.asarray(ground(lat, lon), np.float64)
+            out.append((xy, z, h, tok))
+    return out
+
+
+def fence_mesh(fences):
+    """(positions, uvs, tris, tri materials, MATERIALS, colours) of the fences, or None. Two faces per segment
+    (0.05 m apart, so a fence is seen from both sides), bottom on the ground the tile's roads sit on."""
+    if not fences:
+        return None
+    m = Mesh()
+    for xy, z, h, tok in fences:
+        mat = (MATERIALS.index(tok[0]), tok[1])
+        for k in range(len(xy) - 1):
+            a, b = xy[k], xy[k + 1]
+            za, zb = float(z[k]), float(z[k + 1])
+            d = b - a
+            L = float(np.hypot(*d))
+            if L < 0.2:
+                continue
+            ox, oy = -d[1] / L * 0.05, d[0] / L * 0.05
+            u = L / 2.0
+            A = (a[0] + ox, a[1] + oy, za); B = (b[0] + ox, b[1] + oy, zb)
+            C = (b[0] + ox, b[1] + oy, zb + h); D = (a[0] + ox, a[1] + oy, za + h)
+            m.quad(A, B, C, D, (0.0, 0.0), (u, 0.0), (u, 1.0), (0.0, 1.0), mat)
+            A2 = (a[0] - ox, a[1] - oy, za); B2 = (b[0] - ox, b[1] - oy, zb)
+            C2 = (b[0] - ox, b[1] - oy, zb + h); D2 = (a[0] - ox, a[1] - oy, za + h)
+            m.quad(D2, C2, B2, A2, (0.0, 1.0), (u, 1.0), (u, 0.0), (0.0, 0.0), mat)
+    if not m.n:
+        return None
+    P, UV, T, M, C = m.arrays()
+    return P, UV, T, M, MATERIALS, C
+
+
 def collision_mesh(specs_and_ground):
     """The tile's buildings for physics only: one quad per wall and a flat lid at the eaves (pitched roofs on their
     oriented box), parking decks as drawn; (positions, uvs, tris, tri materials, MATERIALS, colours) or None.
@@ -2949,6 +3040,19 @@ def road_tile(frame, tx, ty, md, ground, lines=None, props=None, items=None):
     if props is not None and lines:
         props.extend(doors(items, lines, x0, y0))
     meshes = build_parts(items, with_lod=True)
+    try:                                    # the mapped fences and walls: one more mesh part of the same tile
+        infra = [md.cell(k, layers=("infrastructure",), kind="demand").layers.get("infrastructure")
+                 for k in roads.cells_of_tile(frame, tx, ty, margin=0.0)]
+        fm = fence_mesh(fence_lines(frame, infra, x0, y0, ground))
+        if fm is not None:                  # into the first part: a tile's parts are capped (roads.BLD_PARTS_MAX)
+            if meshes:
+                first = meshes[0]
+                merged = _concat([first[:6], fm])
+                meshes = ([merged + tuple(first[6:])] if len(first) > 6 else [merged]) + list(meshes[1:])
+            else:
+                meshes = [fm]
+    except Exception:                       # no fences rather than no buildings
+        pass
     if not meshes:
         return None
     return meshes, collider_boxes(items, x0, y0), collision_mesh(items)
