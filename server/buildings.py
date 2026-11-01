@@ -1645,6 +1645,136 @@ def fence_mesh(fences):
     return P, UV, T, M, MATERIALS, C
 
 
+# Yard fences: a fence round a house's yard, YARD_M out from its smallest enclosing rectangle, split into pieces and
+# dropped where a piece would stand on a road, a sidewalk or inside another building (the user, 2026-10-30: "can we
+# add fences for the buildings? 10 m from them, but not on the road").
+YARD_ON = os.environ.get("BNE_YARDS", "on") != "off"
+YARD_M = float(os.environ.get("BNE_YARD_M", "10.0"))
+YARD_H_M = 1.5
+YARD_STEP_M = 2.0
+YARD_ROAD_CLEAR_M = 2.5         # m beyond a road's own half width a fence piece keeps off it
+YARD_NEIGHBOUR_M = 1.0          # m a piece keeps out of another building's box
+YARD_MIN_AREA, YARD_MAX_AREA = 35.0, 700.0
+YARD_MIN_M = 3.0                # m: a yard this small is not worth a fence
+YARD_CLASSES = {"house", "detached", "semidetached_house", "terrace", "bungalow", "villa", "cabin", "farmhouse",
+                "residential", "apartments", "hut"}
+YARD_TOKEN = (METALWALL, (150, 148, 140, 255))
+
+
+def _min_area_rect(ring):
+    """(centre (2,), u (2,), v (2,), half (2,)) of the smallest rectangle round ring, or None."""
+    p = np.asarray(ring, np.float64)[:, :2]
+    if len(p) < 3:
+        return None
+    best = None
+    for k in range(len(p)):
+        d = p[(k + 1) % len(p)] - p[k]
+        L = float(np.hypot(*d))
+        if L < 1e-6:
+            continue
+        u = d / L
+        v = np.array([-u[1], u[0]])
+        s, t = p @ u, p @ v
+        area = (s.max() - s.min()) * (t.max() - t.min())
+        if best is None or area < best[0]:
+            best = (area, u, v, float(s.min()), float(s.max()), float(t.min()), float(t.max()))
+    if best is None:
+        return None
+    area, u, v, s0, s1, t0, t1 = best
+    c = u * (s0 + s1) / 2.0 + v * (t0 + t1) / 2.0
+    return c, u, v, np.array([(s1 - s0) / 2.0, (t1 - t0) / 2.0])
+
+
+def yard_fence_lines(items, lines, x0, y0, frame, ground):
+    """[(xy (2, 2) relative to (x0, y0), z (2,), height, token)]: the yard fences of the tile's houses, a piece per
+    entry. items: tile_buildings' (Spec, gmin, gmax); lines: the road centrelines (anchor frame, half width) that a
+    piece keeps off; frame/ground as road_tile's."""
+    if not YARD_ON or not items:
+        return []
+    # the roads' points, sampled, with their half widths (in the tile's frame)
+    rp, rh = [], []
+    for ln in (lines or ()):
+        pts, half = np.asarray(ln[0], np.float64)[:, :2] - [x0, y0], float(ln[1])
+        if len(pts) < 2:
+            continue
+        s = np.r_[0.0, np.cumsum(np.hypot(*np.diff(pts, axis=0).T))]
+        n = max(2, int(s[-1] / 2.0) + 1)
+        q = np.c_[np.interp(np.linspace(0, s[-1], n), s, pts[:, 0]),
+                  np.interp(np.linspace(0, s[-1], n), s, pts[:, 1])]
+        rp.append(q)
+        rh.append(np.full(len(q), half))
+    road_pts = np.concatenate(rp) if rp else np.zeros((0, 2))
+    road_half = np.concatenate(rh) if rh else np.zeros(0)
+
+    boxes = []
+    for spec, _g0, _g1 in items:
+        if spec.ring is None or ((spec.cls or None) is not None and spec.cls not in YARD_CLASSES):
+            boxes.append(None)
+            continue
+        r = np.asarray(spec.ring, np.float64)[:, :2]
+        boxes.append((r.min(0), r.max(0)) if len(r) else None)
+
+    out = []
+    for n, (spec, _g0, _g1) in enumerate(items):
+        if spec.ring is None or ((spec.cls or None) is not None and spec.cls not in YARD_CLASSES):
+            continue
+        rect = _min_area_rect(spec.ring)
+        if rect is None:
+            continue
+        c, u, v, half = rect
+        area = 4.0 * float(half[0] * half[1])
+        if not (YARD_MIN_AREA <= area <= YARD_MAX_AREA):
+            continue
+        # the yard shrinks towards a close neighbour: no fence through the house next door
+        mid = c
+        d_near = float("inf")
+        for m, other in enumerate(boxes):
+            if m == n or other is None:
+                continue
+            lo, hi = other
+            other_mid = (lo + hi) / 2.0
+            d_near = min(d_near, float(np.hypot(*(other_mid - mid))))
+        yard = min(YARD_M, max(0.0, d_near - 2.0))
+        if yard < YARD_MIN_M:
+            continue
+        hw = half + yard
+        # the four sides of the expanded rectangle, in pieces
+        for k in range(4):
+            a_dir = u if k % 2 == 0 else v
+            b_dir = v if k % 2 == 0 else u
+            a_len = hw[0] if k % 2 == 0 else hw[1]
+            b_len = hw[1] if k % 2 == 0 else hw[0]
+            sign = 1.0 if k < 2 else -1.0
+            base = c + sign * a_dir * a_len
+            n_pieces = max(1, int(2.0 * b_len / YARD_STEP_M))
+            for j in range(n_pieces):
+                t0 = -b_len + 2.0 * b_len * j / n_pieces
+                t1 = -b_len + 2.0 * b_len * (j + 1) / n_pieces
+                p0 = base + b_dir * t0
+                p1 = base + b_dir * t1
+                mid = (p0 + p1) / 2.0
+                if len(road_pts):
+                    d = np.hypot(road_pts[:, 0] - mid[0], road_pts[:, 1] - mid[1])
+                    if float((d - road_half).min()) < YARD_ROAD_CLEAR_M:
+                        continue
+                hit = False
+                for m, other in enumerate(boxes):
+                    if m == n or other is None:
+                        continue
+                    lo, hi = other
+                    if (lo[0] - YARD_NEIGHBOUR_M <= mid[0] <= hi[0] + YARD_NEIGHBOUR_M
+                            and lo[1] - YARD_NEIGHBOUR_M <= mid[1] <= hi[1] + YARD_NEIGHBOUR_M):
+                        hit = True
+                        break
+                if hit:
+                    continue
+                xy = np.array([p0, p1], np.float64)
+                la, lo_, _ = frame.enu_to_geodetic(xy[:, 0] + x0, xy[:, 1] + y0, 0.0)
+                z = np.asarray(ground(np.asarray(la), np.asarray(lo_)), np.float64)
+                out.append((xy, z, YARD_H_M, YARD_TOKEN))
+    return out
+
+
 def collision_mesh(specs_and_ground):
     """The tile's buildings for physics only: one quad per wall and a flat lid at the eaves (pitched roofs on their
     oriented box), parking decks as drawn; (positions, uvs, tris, tri materials, MATERIALS, colours) or None.
@@ -3043,7 +3173,9 @@ def road_tile(frame, tx, ty, md, ground, lines=None, props=None, items=None):
     try:                                    # the mapped fences and walls: one more mesh part of the same tile
         infra = [md.cell(k, layers=("infrastructure",), kind="demand").layers.get("infrastructure")
                  for k in roads.cells_of_tile(frame, tx, ty, margin=0.0)]
-        fm = fence_mesh(fence_lines(frame, infra, x0, y0, ground))
+        fences = fence_lines(frame, infra, x0, y0, ground)
+        fences += yard_fence_lines(items, lines or (), x0, y0, frame, ground)
+        fm = fence_mesh(fences)
         if fm is not None:                  # into the first part: a tile's parts are capped (roads.BLD_PARTS_MAX)
             if meshes:
                 first = meshes[0]
