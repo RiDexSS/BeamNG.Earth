@@ -544,6 +544,7 @@ def profile_sigma(spec):
 
 
 DIRT_ROUGH = float(os.environ.get("BNE_DIRT_BUMP", "1.0"))    # strength of a minor dirt road's damage (1: as below)
+DIRT_MAJOR_SHARE = float(os.environ.get("BNE_DIRT_MAJOR", "0.5"))  # a MAIN dirt road is this much of it (softer)
 DIRT_VERTEX_STEP = 2.0          # m between a dirt road's plan vertices (4 m smoothed a pothole away)
 DIRT_UNDULATION_M = 0.15        # m: the soft rise and fall a country road keeps between its potholes
 DIRT_UNDULATION_WAVES = ((10.0, 1.0), (6.0, 0.8))
@@ -569,7 +570,10 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
     part's ends): a soft undulation plus discrete damage -- potholes, broken patches (a step with soft edges) and the
     odd deep pit -- placed from the road's own position, so every process builds the same ones. None for a built road
     or a main one. The sizes are metres; BNE_DIRT_BUMP scales the lot (1: as here, 0: off)."""
-    if spec.kind in roadsmod.BUILT or spec.cls in MAJOR_CLASSES or DIRT_ROUGH <= 0.0:
+    if spec.kind in roadsmod.BUILT or DIRT_ROUGH <= 0.0:
+        return None
+    scale = DIRT_MAJOR_SHARE if spec.cls in MAJOR_CLASSES else 1.0
+    if scale <= 0.0:
         return None
     xy = np.asarray(xy, np.float64)[:, :2]
     if len(xy) < 2 or n <= 0:
@@ -579,7 +583,7 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
     rng = np.random.default_rng(seed)
     out = np.zeros(n)
     share2 = 0.0
-    for knot_m, share in DIRT_UNDULATION_WAVES:            # the road's own soft rise and fall
+    for knot_m, wshare in DIRT_UNDULATION_WAVES:           # the road's own soft rise and fall
         if s_[-1] < knot_m:
             continue
         knots = rng.normal(0.0, 1.0, int(s_[-1] / knot_m) + 3)
@@ -587,10 +591,10 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
         i0 = np.clip(np.floor(t).astype(int), 0, len(knots) - 2)
         f = t - i0
         f = f * f * (3.0 - 2.0 * f)
-        out += share * (knots[i0] * (1.0 - f) + knots[i0 + 1] * f)
-        share2 += share * share
+        out += wshare * (knots[i0] * (1.0 - f) + knots[i0 + 1] * f)
+        share2 += wshare * wshare
     if float(out.std()) > 1e-9:
-        out *= DIRT_UNDULATION_M / math.sqrt(share2)
+        out *= DIRT_UNDULATION_M * scale / math.sqrt(share2)
 
     def bowl(c, w, d):                                     # a rounded hole: full depth in the middle, soft rim
         return -d * np.exp(-((s_ - c) / (0.45 * w)) ** 2)
@@ -599,16 +603,16 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
     if length > 10.0:
         for _ in range(int(rng.poisson(max(1.0, length / DIRT_POTHOLE_EVERY_M)))):
             out += bowl(float(rng.uniform(0.0, length)), float(rng.uniform(*DIRT_POTHOLE_W_M)),
-                        float(rng.uniform(*DIRT_POTHOLE_D_M)) * DIRT_ROUGH)
+                        float(rng.uniform(*DIRT_POTHOLE_D_M)) * DIRT_ROUGH * scale)
         for _ in range(int(rng.poisson(max(1.0, length / DIRT_PATCH_EVERY_M)))):   # broken patch: a step, soft edges
             c = float(rng.uniform(0.0, length))
             w = float(rng.uniform(*DIRT_PATCH_W_M))
-            d = float(rng.uniform(*DIRT_PATCH_D_M)) * DIRT_ROUGH * (1.0 if rng.random() < 0.5 else -1.0)
+            d = float(rng.uniform(*DIRT_PATCH_D_M)) * DIRT_ROUGH * scale * (1.0 if rng.random() < 0.5 else -1.0)
             edge = 0.35 * w
             out += d * 0.5 * (np.tanh((s_ - (c - 0.5 * w)) / edge) - np.tanh((s_ - (c + 0.5 * w)) / edge))
         for _ in range(int(rng.poisson(max(0.3, length / DIRT_PIT_EVERY_M)))):      # the odd deep pit
             out += bowl(float(rng.uniform(0.0, length)), float(rng.uniform(*DIRT_PIT_W_M)),
-                        float(rng.uniform(*DIRT_PIT_D_M)) * DIRT_ROUGH)
+                        float(rng.uniform(*DIRT_PIT_D_M)) * DIRT_ROUGH * scale)
         if DIRT_BASE_M > 0.0 and length > 1.5 * DIRT_BASE_M:   # keep the terrain's own course: no net rise or fall
             k = max(1, int(DIRT_BASE_M / max(step, 1e-6)))
             pad = k // 2
