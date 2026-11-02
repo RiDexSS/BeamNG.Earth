@@ -557,6 +557,8 @@ DIRT_PIT_EVERY_M = 150.0        # m of road per deep pit
 DIRT_PIT_W_M = (2.0, 4.5)
 DIRT_PIT_D_M = (0.40, 0.70)
 DIRT_STEP_MAX_M = float(os.environ.get("BNE_DIRT_STEP", "0.35"))   # m: the steepest step between two 2 m samples
+DIRT_TAPER_M = 22.0            # m at each end of a dirt road where its damage fades out: a junction meets the road it
+                               # joins at that road's height, not on a berm of its own potholes
 
 
 def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
@@ -604,6 +606,10 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
         for _ in range(int(rng.poisson(max(0.3, length / DIRT_PIT_EVERY_M)))):      # the odd deep pit
             out += bowl(float(rng.uniform(0.0, length)), float(rng.uniform(*DIRT_PIT_W_M)),
                         float(rng.uniform(*DIRT_PIT_D_M)) * DIRT_ROUGH)
+        if DIRT_TAPER_M > 0.0 and length > 2.0 * DIRT_TAPER_M:
+            tap = np.minimum(s_ - s_[0], s_[-1] - s_) / DIRT_TAPER_M
+            tap = np.clip(tap, 0.0, 1.0)
+            out *= tap * tap * (3.0 - 2.0 * tap)     # (nothing right at a junction: that road sets the height there)
     return out
 
 
@@ -618,7 +624,11 @@ def _plan(xy, z, spec, abut=(False, False), ext=(0, 0), step=PROFILE_STEP, bank_
         z0 = zs + bumps[ext[0]:len(z) - ext[1]]
         if DIRT_STEP_MAX_M > 0.0 and len(z0) > 1:   # but no walls: a pothole's far side is a slope, not a cliff
             d = np.clip(np.diff(z0), -DIRT_STEP_MAX_M, DIRT_STEP_MAX_M)
-            z0 = np.r_[z0[0], z0[0] + np.cumsum(d)]
+            capped = np.r_[z0[0], z0[0] + np.cumsum(d)]
+            # (clipping loses height wherever it bites: give it back as a straight tilt, so the ends -- the junctions --
+            # stay on the road's own profile instead of drifting up or down along the length)
+            capped += np.linspace(0.0, float(z0[-1] - capped[-1]), len(capped))
+            z0 = capped
         zs = z0
     # thin to VERTEX_STEP (the profile stays smooth between: linear in the grading pass); a minor dirt road keeps
     # every sample, or its potholes would be smoothed away by the linear stretches between the vertices
