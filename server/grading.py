@@ -543,12 +543,38 @@ def profile_sigma(spec):
     return max(SIGMA_M, CLASS_SIGMA_M.get(spec.cls, SIGMA_M)) if not getattr(spec, "link", False) else SIGMA_M
 
 
+DIRT_BUMP_M = float(os.environ.get("BNE_DIRT_BUMP", "0.07"))   # m: the bumps a minor dirt road gets
+DIRT_BUMP_WAVES = ((23.0, 1.0), (11.0, 0.55), (5.5, 0.3))      # (wavelength m, share of the amplitude)
+
+
+def dirt_bumps(xy, spec, step=PROFILE_STEP):
+    """The bumps a minor dirt road carries (m per sample along xy): three sines seeded by the road's own position, so
+    every process builds the same ones. Empty for a built road or a main one (the elevation data in Russia is a 30 m
+    mosaic: smooth at every scale a dirt road would be rough at, so they are added rather than followed)."""
+    if spec.kind in roadsmod.BUILT or spec.cls in MAJOR_CLASSES or DIRT_BUMP_M <= 0.0:
+        return None
+    xy = np.asarray(xy, np.float64)[:, :2]
+    if len(xy) < 2:
+        return None
+    s_ = np.r_[0.0, np.cumsum(np.hypot(*np.diff(xy, axis=0).T))]
+    seed = (int(round(float(xy[0, 0]) * 7.0)) * 7919 + int(round(float(xy[0, 1]) * 7.0)) * 104729) & 0x7FFFFFFF
+    rng = np.random.default_rng(seed)
+    out = np.zeros(len(xy))
+    for wavelength, share in DIRT_BUMP_WAVES:
+        out += share * np.sin(2.0 * np.pi * s_ / wavelength + float(rng.uniform(0.0, 2.0 * np.pi)))
+    return out * DIRT_BUMP_M
+
+
 def _plan(xy, z, spec, abut=(False, False), ext=(0, 0), step=PROFILE_STEP, bank_xy=None, bank_ext=None):
     """ext: (before, after), samples of z past the part's ends (plan_roads): smoothed with it, then dropped. step: m
     between the samples. bank_xy: the matching extended geometry, trimmed after the curvature/runoff pass."""
     built = spec.kind in roadsmod.BUILT
     zs = smooth_profile(median_profile(z, step, MEDIAN_M if built else DIRT_MEDIAN_M), step,
                         profile_sigma(spec))[ext[0]:len(z) - ext[1]]
+    bumps = dirt_bumps(xy, spec, step)
+    if bumps is not None:
+        bumps = smooth_profile(bumps, step, DIRT_SIGMA_MINOR_M)
+        zs = zs + bumps[ext[0]:len(z) - ext[1]]
     # thin to VERTEX_STEP (the profile stays smooth between: linear in the grading pass)
     every = max(1, int(round(VERTEX_STEP / PROFILE_STEP)))
     keep = np.r_[np.arange(0, len(xy) - 1, every), len(xy) - 1]
