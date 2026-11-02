@@ -2824,6 +2824,55 @@ def _never_raised(spec):
     return spec.cls in APPROACH_SKIP and not _is_link(spec)
 
 
+TERRAIN_ROUGH_M = float(os.environ.get("BNE_TERRAIN_BUMP", "0.0"))   # off-road roughness (std), about twice a minor
+                                                                       # dirt road's: beside it is rougher than on it
+TERRAIN_ROUGH_WAVES = ((9.0, 1.0), (4.5, 0.6), (2.4, 0.3))             # (feature size m, share)
+
+
+def _hash01(i, j, salt=0):
+    """A stable pseudo-random value in [0, 1) for lattice points (Python's hash() is randomised per process)."""
+    i = np.asarray(i, np.int64)
+    j = np.asarray(j, np.int64)
+    h = (i * np.int64(73856093)) ^ (j * np.int64(19349663)) ^ np.int64(int(salt) * 83492791)
+    h = h.astype(np.uint64)
+    h ^= h >> np.uint64(13)
+    h *= np.uint64(1274126177)
+    h ^= h >> np.uint64(16)
+    return (h & np.uint64(0xFFFFFF)).astype(np.float64) / float(0x1000000)
+
+
+def terrain_bumps(lat, lon):
+    """World-locked roughness of the land off the roads (m), the same value whatever process or tile asks: value noise
+    at a few sizes, about TERRAIN_ROUGH_M (std). Zero when BNE_TERRAIN_BUMP is 0."""
+    if TERRAIN_ROUGH_M <= 0.0:
+        return np.zeros(np.shape(lat), np.float64)
+    la = np.asarray(lat, np.float64)
+    lo = np.asarray(lon, np.float64)
+    y = la * 110574.0
+    x = lo * 111320.0 * np.cos(np.radians(la))
+    out = np.zeros(np.shape(la), np.float64)
+    norm = 0.0
+    for size, share in TERRAIN_ROUGH_WAVES:
+        fx = x / size
+        fy = y / size
+        i0 = np.floor(fx)
+        j0 = np.floor(fy)
+        tx = fx - i0
+        ty = fy - j0
+        sx = tx * tx * (3.0 - 2.0 * tx)
+        sy = ty * ty * (3.0 - 2.0 * ty)
+        i0 = i0.astype(np.int64)
+        j0 = j0.astype(np.int64)
+        v00 = _hash01(i0, j0, size)
+        v10 = _hash01(i0 + 1, j0, size)
+        v01 = _hash01(i0, j0 + 1, size)
+        v11 = _hash01(i0 + 1, j0 + 1, size)
+        v = (v00 * (1.0 - sx) + v10 * sx) * (1.0 - sy) + (v01 * (1.0 - sx) + v11 * sx) * sy
+        out += share * (v - 0.5)
+        norm += share * share
+    return out * (TERRAIN_ROUGH_M / (0.1875 * math.sqrt(norm)))
+
+
 class GradedDem:
     """dem.Dem with sample() graded under the roads; everything else passes through."""
 
@@ -2832,6 +2881,8 @@ class GradedDem:
 
     def sample(self, lat, lon, zoom, progress=None):
         base = self._dem.sample(lat, lon, zoom, progress) if progress is not None else self._dem.sample(lat, lon, zoom)
+        # the land off the roads is rougher than the roads themselves (the grading flattens the road's own strip)
+        base = np.asarray(base, np.float64) + terrain_bumps(np.asarray(lat, np.float64), np.asarray(lon, np.float64))
         return self._grader.apply(lat, lon, base)
 
     def __getattr__(self, name):
