@@ -545,18 +545,21 @@ def profile_sigma(spec):
 
 DIRT_ROUGH = float(os.environ.get("BNE_DIRT_BUMP", "1.0"))    # strength of a minor dirt road's damage (1: as below)
 DIRT_VERTEX_STEP = 2.0          # m between a dirt road's plan vertices (4 m smoothed a pothole away)
-DIRT_UNDULATION_M = 0.22        # m: the soft rise and fall a country road keeps between its potholes
+DIRT_UNDULATION_M = 0.15        # m: the soft rise and fall a country road keeps between its potholes
 DIRT_UNDULATION_WAVES = ((10.0, 1.0), (6.0, 0.8))
 DIRT_POTHOLE_EVERY_M = 5.0      # m of road per pothole, on average
 DIRT_POTHOLE_W_M = (3.0, 6.0)   # m: a pothole's width
-DIRT_POTHOLE_D_M = (0.25, 0.45)  # m: its depth
+DIRT_POTHOLE_D_M = (0.18, 0.32)  # m: its depth
 DIRT_PATCH_EVERY_M = 10.0       # m of road per broken patch (a step of a few cm with soft edges)
 DIRT_PATCH_W_M = (3.0, 7.0)
 DIRT_PATCH_D_M = (0.12, 0.22)
 DIRT_PIT_EVERY_M = 150.0        # m of road per deep pit
 DIRT_PIT_W_M = (2.0, 4.5)
-DIRT_PIT_D_M = (0.40, 0.70)
+DIRT_PIT_D_M = (0.30, 0.50)
 DIRT_STEP_MAX_M = float(os.environ.get("BNE_DIRT_STEP", "0.35"))   # m: the steepest step between two 2 m samples
+DIRT_BASE_M = 70.0             # m: the bump pattern's own long waves are removed over this length, so a road keeps
+                               # the terrain's course instead of sinking into it (the roads sat in a ditch, further in
+                               # the worse it got: the damage's mean pulled them down along their length)
 DIRT_TAPER_M = 22.0            # m at each end of a dirt road where its damage fades out: a junction meets the road it
                                # joins at that road's height, not on a berm of its own potholes
 
@@ -606,6 +609,11 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
         for _ in range(int(rng.poisson(max(0.3, length / DIRT_PIT_EVERY_M)))):      # the odd deep pit
             out += bowl(float(rng.uniform(0.0, length)), float(rng.uniform(*DIRT_PIT_W_M)),
                         float(rng.uniform(*DIRT_PIT_D_M)) * DIRT_ROUGH)
+        if DIRT_BASE_M > 0.0 and length > 2.0 * DIRT_BASE_M:   # keep the terrain's own course: no net rise or fall
+            k = max(1, int(DIRT_BASE_M / max(step, 1e-6)))
+            pad = k // 2
+            padded = np.r_[np.full(pad, out[0]), out, np.full(k - pad - 1, out[-1])]
+            out = out - np.convolve(padded, np.ones(k) / k, mode="valid")[:len(out)]
         if DIRT_TAPER_M > 0.0 and length > 2.0 * DIRT_TAPER_M:
             tap = np.minimum(s_ - s_[0], s_[-1] - s_) / DIRT_TAPER_M
             tap = np.clip(tap, 0.0, 1.0)
