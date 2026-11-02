@@ -648,7 +648,8 @@ def _plan(xy, z, spec, abut=(False, False), ext=(0, 0), step=PROFILE_STEP, bank_
         zs = z0
     # thin to VERTEX_STEP (the profile stays smooth between: linear in the grading pass); a minor dirt road keeps
     # every sample, or its potholes would be smoothed away by the linear stretches between the vertices
-    vstep = DIRT_VERTEX_STEP if bumps is not None else VERTEX_STEP
+    minor_dirt = bumps is not None and spec.cls not in MAJOR_CLASSES
+    vstep = DIRT_VERTEX_STEP if minor_dirt else VERTEX_STEP
     every = max(1, int(round(vstep / PROFILE_STEP)))
     keep = np.r_[np.arange(0, len(xy) - 1, every), len(xy) - 1]
     # the carriageway as a city street would have it (never from the land cover), or the measured one
