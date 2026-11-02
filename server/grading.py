@@ -557,7 +557,7 @@ DIRT_PIT_EVERY_M = 150.0        # m of road per deep pit
 DIRT_PIT_W_M = (2.0, 4.5)
 DIRT_PIT_D_M = (0.30, 0.50)
 DIRT_STEP_MAX_M = float(os.environ.get("BNE_DIRT_STEP", "0.35"))   # m: the steepest step between two 2 m samples
-DIRT_BASE_M = 70.0             # m: the bump pattern's own long waves are removed over this length, so a road keeps
+DIRT_BASE_M = 25.0             # m: the bump pattern's own long waves are removed over this length, so a road keeps
                                # the terrain's course instead of sinking into it (the roads sat in a ditch, further in
                                # the worse it got: the damage's mean pulled them down along their length)
 DIRT_TAPER_M = 22.0            # m at each end of a dirt road where its damage fades out: a junction meets the road it
@@ -609,7 +609,7 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
         for _ in range(int(rng.poisson(max(0.3, length / DIRT_PIT_EVERY_M)))):      # the odd deep pit
             out += bowl(float(rng.uniform(0.0, length)), float(rng.uniform(*DIRT_PIT_W_M)),
                         float(rng.uniform(*DIRT_PIT_D_M)) * DIRT_ROUGH)
-        if DIRT_BASE_M > 0.0 and length > 2.0 * DIRT_BASE_M:   # keep the terrain's own course: no net rise or fall
+        if DIRT_BASE_M > 0.0 and length > 1.5 * DIRT_BASE_M:   # keep the terrain's own course: no net rise or fall
             k = max(1, int(DIRT_BASE_M / max(step, 1e-6)))
             pad = k // 2
             padded = np.r_[np.full(pad, out[0]), out, np.full(k - pad - 1, out[-1])]
@@ -633,9 +633,13 @@ def _plan(xy, z, spec, abut=(False, False), ext=(0, 0), step=PROFILE_STEP, bank_
         if DIRT_STEP_MAX_M > 0.0 and len(z0) > 1:   # but no walls: a pothole's far side is a slope, not a cliff
             d = np.clip(np.diff(z0), -DIRT_STEP_MAX_M, DIRT_STEP_MAX_M)
             capped = np.r_[z0[0], z0[0] + np.cumsum(d)]
-            # (clipping loses height wherever it bites: give it back as a straight tilt, so the ends -- the junctions --
-            # stay on the road's own profile instead of drifting up or down along the length)
-            capped += np.linspace(0.0, float(z0[-1] - capped[-1]), len(capped))
+            # (clipping loses height where it bites: give it back smoothed, so it stays local -- a straight tilt across
+            # the whole road leaned it into the ground, the further the deeper)
+            lost = z0 - capped
+            if float(np.abs(lost).max()) > 1e-6:
+                back = smooth_profile(lost, step, 40.0)
+                back += float(np.mean(lost - back))
+                capped += back
             z0 = capped
         zs = z0
     # thin to VERTEX_STEP (the profile stays smooth between: linear in the grading pass); a minor dirt road keeps
