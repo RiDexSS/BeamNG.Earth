@@ -550,6 +550,8 @@ DIRT_MAJOR_SHARE = float(os.environ.get("BNE_DIRT_MAJOR", "0.2"))  # a MAIN dirt
 DIRT_SOFT_CLASSES = {"motorway", "trunk", "primary", "secondary", "tertiary"}
 # a forest track (highway=track) is worse than any of them: "you cannot even get up to speed on it" (the user, 2026-11-02)
 DIRT_TRACK_SHARE = float(os.environ.get("BNE_DIRT_TRACK", "2.5"))
+DIRT_TRACK_WAVE_SHARE = float(os.environ.get("BNE_DIRT_TRACK_WAVE", "0.5"))   # ... but less of the soft undulation:
+                                                                              # waves read as a pattern, holes do not
 DIRT_VERTEX_STEP = 2.0          # m between a dirt road's plan vertices (4 m smoothed a pothole away)
 DIRT_UNDULATION_M = 0.15        # m: the soft rise and fall a country road keeps between its potholes
 DIRT_UNDULATION_WAVES = ((10.0, 1.0), (6.0, 0.8))
@@ -577,8 +579,13 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
     or a main one. The sizes are metres; BNE_DIRT_BUMP scales the lot (1: as here, 0: off)."""
     if spec.kind in roadsmod.BUILT or DIRT_ROUGH <= 0.0:
         return None
-    scale = DIRT_TRACK_SHARE if spec.cls == "track" else (DIRT_MAJOR_SHARE if spec.cls in DIRT_SOFT_CLASSES else 1.0)
-    if scale <= 0.0:
+    if spec.cls == "track":
+        scale, wave = DIRT_TRACK_SHARE, DIRT_TRACK_WAVE_SHARE
+    elif spec.cls in DIRT_SOFT_CLASSES:
+        scale = wave = DIRT_MAJOR_SHARE
+    else:
+        scale = wave = 1.0
+    if scale <= 0.0 and wave <= 0.0:
         return None
     xy = np.asarray(xy, np.float64)[:, :2]
     if len(xy) < 2 or n <= 0:
@@ -599,7 +606,7 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
         out += wshare * (knots[i0] * (1.0 - f) + knots[i0 + 1] * f)
         share2 += wshare * wshare
     if float(out.std()) > 1e-9:
-        out *= DIRT_UNDULATION_M * scale / math.sqrt(share2)
+        out *= DIRT_UNDULATION_M * wave / math.sqrt(share2)
 
     def bowl(c, w, d):                                     # a rounded hole: full depth in the middle, soft rim
         return -d * np.exp(-((s_ - c) / (0.45 * w)) ** 2)
