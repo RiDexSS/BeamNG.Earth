@@ -1685,26 +1685,39 @@ def _min_area_rect(ring):
     return c, u, v, np.array([(s1 - s0) / 2.0, (t1 - t0) / 2.0])
 
 
+def _road_penetration(a, b, rp, rh, clear, step=YARD_STEP_M):
+    """m a segment a-b still reaches into a road's corridor (0: clear), the deepest point along it."""
+    n = max(2, int(float(np.hypot(*(b - a))) / step) + 1)
+    t = np.linspace(0.0, 1.0, n)[:, None]
+    pts = a + (b - a) * t
+    worst = 0.0
+    for rpts, rhalf in zip(rp, rh):
+        q0, q1 = rpts[:-1], rpts[1:]
+        ab = q1 - q0
+        L2 = np.maximum((ab * ab).sum(1), 1e-9)
+        tt = np.clip(((pts[:, None, :] - q0[None]) * ab[None]).sum(2) / L2[None], 0.0, 1.0)
+        q = q0[None] + tt[..., None] * ab[None]
+        d = np.hypot(*(q - pts[:, None, :]).transpose(2, 0, 1))
+        need = np.asarray(rhalf, np.float64)[d.argmin(1)]
+        worst = max(worst, float((need + clear - d.min(1)).max()))
+    return worst
+
+
 def yard_fence_lines(items, lines, x0, y0, frame, ground):
-    """[(xy (2, 2) relative to (x0, y0), z (2,), height, token)]: the yard fences of the tile's houses, a piece per
-    entry. items: tile_buildings' (Spec, gmin, gmax); lines: the road centrelines (anchor frame, half width) that a
-    piece keeps off; frame/ground as road_tile's."""
+    """[(xy (k, 2) relative to (x0, y0), z (k,), height, token)]: one closed yard fence per house — the four sides of
+    its smallest enclosing rectangle, each pulled out towards YARD_M but stopping at the edge of a road (a side whose
+    stretch would run over one is drawn nearer the house instead, so the yard stays a closed ring and the fence follows
+    the kerb where a street is close). lines: the road centrelines (anchor frame, half width); frame/ground as
+    road_tile's."""
     if not YARD_ON or not items:
         return []
-    # the roads' points, sampled, with their half widths (in the tile's frame)
     rp, rh = [], []
     for ln in (lines or ()):
         pts, half = np.asarray(ln[0], np.float64)[:, :2] - [x0, y0], float(ln[1])
         if len(pts) < 2:
             continue
-        s = np.r_[0.0, np.cumsum(np.hypot(*np.diff(pts, axis=0).T))]
-        n = max(2, int(s[-1] / 2.0) + 1)
-        q = np.c_[np.interp(np.linspace(0, s[-1], n), s, pts[:, 0]),
-                  np.interp(np.linspace(0, s[-1], n), s, pts[:, 1])]
-        rp.append(q)
-        rh.append(np.full(len(q), half))
-    road_pts = np.concatenate(rp) if rp else np.zeros((0, 2))
-    road_half = np.concatenate(rh) if rh else np.zeros(0)
+        rp.append(pts)
+        rh.append(np.full(len(pts), half))
 
     boxes = []
     for spec, _g0, _g1 in items:
@@ -1725,53 +1738,36 @@ def yard_fence_lines(items, lines, x0, y0, frame, ground):
         area = 4.0 * float(half[0] * half[1])
         if not (YARD_MIN_AREA <= area <= YARD_MAX_AREA):
             continue
-        # the yard shrinks towards a close neighbour: no fence through the house next door
-        mid = c
         d_near = float("inf")
         for m, other in enumerate(boxes):
             if m == n or other is None:
                 continue
             lo, hi = other
-            other_mid = (lo + hi) / 2.0
-            d_near = min(d_near, float(np.hypot(*(other_mid - mid))))
+            d_near = min(d_near, float(np.hypot(*((lo + hi) / 2.0 - c))))
         yard = min(YARD_M, max(0.0, d_near - 2.0))
         if yard < YARD_MIN_M:
             continue
-        hw = half + yard
-        # the four sides of the expanded rectangle, in pieces
-        for k in range(4):
-            a_dir = u if k % 2 == 0 else v
-            b_dir = v if k % 2 == 0 else u
-            a_len = hw[0] if k % 2 == 0 else hw[1]
-            b_len = hw[1] if k % 2 == 0 else hw[0]
-            sign = 1.0 if k < 2 else -1.0
-            base = c + sign * a_dir * a_len
-            n_pieces = max(1, int(2.0 * b_len / YARD_STEP_M))
-            for j in range(n_pieces):
-                t0 = -b_len + 2.0 * b_len * j / n_pieces
-                t1 = -b_len + 2.0 * b_len * (j + 1) / n_pieces
-                p0 = base + b_dir * t0
-                p1 = base + b_dir * t1
-                mid = (p0 + p1) / 2.0
-                if len(road_pts):
-                    d = np.hypot(road_pts[:, 0] - mid[0], road_pts[:, 1] - mid[1])
-                    if float((d - road_half).min()) < YARD_ROAD_CLEAR_M:
-                        continue
-                hit = False
-                for m, other in enumerate(boxes):
-                    if m == n or other is None:
-                        continue
-                    lo, hi = other
-                    if (lo[0] - YARD_NEIGHBOUR_M <= mid[0] <= hi[0] + YARD_NEIGHBOUR_M
-                            and lo[1] - YARD_NEIGHBOUR_M <= mid[1] <= hi[1] + YARD_NEIGHBOUR_M):
-                        hit = True
-                        break
-                if hit:
-                    continue
-                xy = np.array([p0, p1], np.float64)
-                la, lo_, _ = frame.enu_to_geodetic(xy[:, 0] + x0, xy[:, 1] + y0, 0.0)
-                z = np.asarray(ground(np.asarray(la), np.asarray(lo_)), np.float64)
-                out.append((xy, z, YARD_H_M, YARD_TOKEN))
+        def ring_at(y):
+            return np.array([c + u * (half[0] + y) + v * (half[1] + y),
+                             c - u * (half[0] + y) + v * (half[1] + y),
+                             c - u * (half[0] + y) - v * (half[1] + y),
+                             c + u * (half[0] + y) - v * (half[1] + y)])
+
+        corners = None
+        y = yard
+        while y >= YARD_MIN_M:                  # the biggest yard whose whole ring stays off the roads
+            cand = ring_at(y)
+            if not rp or all(_road_penetration(cand[k], cand[(k + 1) % 4], rp, rh, YARD_ROAD_CLEAR_M) <= 0.0
+                             for k in range(4)):
+                corners = cand
+                break
+            y -= 0.5
+        if corners is None:
+            continue
+        xy = np.vstack([corners, corners[:1]])
+        la, lo_, _ = frame.enu_to_geodetic(xy[:, 0] + x0, xy[:, 1] + y0, 0.0)
+        z = np.asarray(ground(np.asarray(la), np.asarray(lo_)), np.float64)
+        out.append((xy, z, YARD_H_M, YARD_TOKEN))
     return out
 
 
@@ -1784,8 +1780,9 @@ def yard_road_lines(frame, road_layers, x0, y0):
         if f is None or len(f.kind) == 0:
             continue
         specs = roadsmod.road_specs(f)
-        for i, sp in enumerate(specs):
-            if sp is None or sp.kind not in roadsmod.BUILT:
+        for i in range(len(f)):
+            sp = specs[i] if specs is not None else None
+            if sp is not None and sp.kind not in roadsmod.BUILT:
                 continue
             a = f.coord_off[f.ring_off[f.part_off[i]]]
             b = f.coord_off[f.ring_off[f.part_off[i + 1]]]
@@ -1793,7 +1790,8 @@ def yard_road_lines(frame, road_layers, x0, y0):
                 continue
             pts = np.asarray(f.lonlat[a:b], np.float64)[:, :2]
             e, n, _ = frame.geodetic_to_enu(pts[:, 1], pts[:, 0], 0.0)
-            out.append((np.stack([np.asarray(e), np.asarray(n)], axis=1), float(sp.width) / 2.0))
+            half = (float(sp.width) / 2.0) if sp is not None else 3.5
+            out.append((np.stack([np.asarray(e), np.asarray(n)], axis=1), half))
     return out
 
 
