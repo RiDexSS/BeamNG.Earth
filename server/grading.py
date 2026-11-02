@@ -543,19 +543,27 @@ def profile_sigma(spec):
     return max(SIGMA_M, CLASS_SIGMA_M.get(spec.cls, SIGMA_M)) if not getattr(spec, "link", False) else SIGMA_M
 
 
-DIRT_BUMP_M = float(os.environ.get("BNE_DIRT_BUMP", "0.16"))   # m: the roughness of a minor dirt road (std)
-DIRT_BUMP_WAVES = ((10.0, 1.0), (6.0, 0.8), (4.0, 0.6))        # (m of the noise's knots, share of the amplitude)
-DIRT_POTHOLE_M = float(os.environ.get("BNE_DIRT_POTHOLE", "0.16"))   # m: the deepest dip of a pothole (0: none)
-DIRT_POTHOLE_EVERY_M = 45.0     # m of road per pothole, on average
+DIRT_ROUGH = float(os.environ.get("BNE_DIRT_BUMP", "1.0"))    # strength of a minor dirt road's damage (1: as below)
+DIRT_VERTEX_STEP = 2.0          # m between a dirt road's plan vertices (4 m smoothed a pothole away)
+DIRT_UNDULATION_M = 0.05        # m: the soft rise and fall a country road keeps between its potholes
+DIRT_UNDULATION_WAVES = ((10.0, 1.0), (6.0, 0.8))
+DIRT_POTHOLE_EVERY_M = 11.0     # m of road per pothole, on average
+DIRT_POTHOLE_W_M = (1.2, 3.2)   # m: a pothole's width
+DIRT_POTHOLE_D_M = (0.05, 0.16)  # m: its depth
+DIRT_PATCH_EVERY_M = 28.0       # m of road per broken patch (a step of a few cm with soft edges)
+DIRT_PATCH_W_M = (3.0, 7.0)
+DIRT_PATCH_D_M = (0.02, 0.055)
+DIRT_PIT_EVERY_M = 220.0        # m of road per deep pit
+DIRT_PIT_W_M = (2.0, 4.5)
+DIRT_PIT_D_M = (0.15, 0.28)
 
 
 def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
-    """The roughness a minor dirt road carries, one value per profile sample (n samples, ext: how many lie past the
-    part's ends): seeded value noise at a few scales (the plan's vertices are VERTEX_STEP apart, so nothing shorter
-    survives) plus the odd pothole, from the road's own position -- the same in every process. None for a built road or
-    a main one (the elevation data in Russia is a 30 m mosaic: smooth at every scale a dirt road is rough at, so the
-    roughness is added rather than followed)."""
-    if spec.kind in roadsmod.BUILT or spec.cls in MAJOR_CLASSES or (DIRT_BUMP_M <= 0.0 and DIRT_POTHOLE_M <= 0.0):
+    """What a minor dirt road is really like, one value per profile sample (n samples, ext: how many lie past the
+    part's ends): a soft undulation plus discrete damage -- potholes, broken patches (a step with soft edges) and the
+    odd deep pit -- placed from the road's own position, so every process builds the same ones. None for a built road
+    or a main one. The sizes are metres; BNE_DIRT_BUMP scales the lot (1: as here, 0: off)."""
+    if spec.kind in roadsmod.BUILT or spec.cls in MAJOR_CLASSES or DIRT_ROUGH <= 0.0:
         return None
     xy = np.asarray(xy, np.float64)[:, :2]
     if len(xy) < 2 or n <= 0:
@@ -564,8 +572,8 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
     seed = (int(round(float(xy[0, 0]) * 7.0)) * 7919 + int(round(float(xy[0, 1]) * 7.0)) * 104729) & 0x7FFFFFFF
     rng = np.random.default_rng(seed)
     out = np.zeros(n)
-    total_share = 0.0
-    for knot_m, share in DIRT_BUMP_WAVES:          # value noise: a random height per knot, smoothstepped between
+    share2 = 0.0
+    for knot_m, share in DIRT_UNDULATION_WAVES:            # the road's own soft rise and fall
         if s_[-1] < knot_m:
             continue
         knots = rng.normal(0.0, 1.0, int(s_[-1] / knot_m) + 3)
@@ -574,15 +582,27 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
         f = t - i0
         f = f * f * (3.0 - 2.0 * f)
         out += share * (knots[i0] * (1.0 - f) + knots[i0 + 1] * f)
-        total_share += share * share
-    if len(out) and float(out.std()) > 1e-9:
-        out *= DIRT_BUMP_M / math.sqrt(total_share)   # (the sum's own deviation, so DIRT_BUMP_M is its size)
-    if DIRT_POTHOLE_M > 0.0 and s_[-1] > 20.0:         # potholes: a few deep dips, at random places
-        for _ in range(int(rng.poisson(max(0.5, s_[-1] / DIRT_POTHOLE_EVERY_M)))):
-            c = float(rng.uniform(0.0, s_[-1]))
-            w = float(rng.uniform(3.5, 7.0))
-            d = float(rng.uniform(0.5, 1.0)) * DIRT_POTHOLE_M
-            out -= d * np.exp(-((s_ - c) / w) ** 2)
+        share2 += share * share
+    if float(out.std()) > 1e-9:
+        out *= DIRT_UNDULATION_M / math.sqrt(share2)
+
+    def bowl(c, w, d):                                     # a rounded hole: full depth in the middle, soft rim
+        return -d * np.exp(-((s_ - c) / (0.55 * w)) ** 2)
+
+    length = float(s_[-1]) if len(s_) else 0.0
+    if length > 10.0:
+        for _ in range(int(rng.poisson(max(1.0, length / DIRT_POTHOLE_EVERY_M)))):
+            out += bowl(float(rng.uniform(0.0, length)), float(rng.uniform(*DIRT_POTHOLE_W_M)),
+                        float(rng.uniform(*DIRT_POTHOLE_D_M)) * DIRT_ROUGH)
+        for _ in range(int(rng.poisson(max(1.0, length / DIRT_PATCH_EVERY_M)))):   # broken patch: a step, soft edges
+            c = float(rng.uniform(0.0, length))
+            w = float(rng.uniform(*DIRT_PATCH_W_M))
+            d = float(rng.uniform(*DIRT_PATCH_D_M)) * DIRT_ROUGH * (1.0 if rng.random() < 0.5 else -1.0)
+            edge = 0.35 * w
+            out += d * 0.5 * (np.tanh((s_ - (c - 0.5 * w)) / edge) - np.tanh((s_ - (c + 0.5 * w)) / edge))
+        for _ in range(int(rng.poisson(max(0.3, length / DIRT_PIT_EVERY_M)))):      # the odd deep pit
+            out += bowl(float(rng.uniform(0.0, length)), float(rng.uniform(*DIRT_PIT_W_M)),
+                        float(rng.uniform(*DIRT_PIT_D_M)) * DIRT_ROUGH)
     return out
 
 
@@ -596,8 +616,10 @@ def _plan(xy, z, spec, abut=(False, False), ext=(0, 0), step=PROFILE_STEP, bank_
     if bumps is not None:
         bumps = smooth_profile(bumps, step, DIRT_SIGMA_MINOR_M)
         zs = zs + bumps[ext[0]:len(z) - ext[1]]
-    # thin to VERTEX_STEP (the profile stays smooth between: linear in the grading pass)
-    every = max(1, int(round(VERTEX_STEP / PROFILE_STEP)))
+    # thin to VERTEX_STEP (the profile stays smooth between: linear in the grading pass); a minor dirt road keeps
+    # every sample, or its potholes would be smoothed away by the linear stretches between the vertices
+    vstep = DIRT_VERTEX_STEP if bumps is not None else VERTEX_STEP
+    every = max(1, int(round(vstep / PROFILE_STEP)))
     keep = np.r_[np.arange(0, len(xy) - 1, every), len(xy) - 1]
     # the carriageway as a city street would have it (never from the land cover), or the measured one
     width = max(spec.width, roadsmod.carriageway(spec.cls, spec.kind, True, None, spec.oneway)) if built else spec.width
