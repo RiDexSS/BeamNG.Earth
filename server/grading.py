@@ -702,9 +702,51 @@ BANK_FADE_M = 100.0         # smoothstep to level at a bridge / loose end; no de
 BANK_SIGMA_M = 12.0         # remove discrete box-window steps in cross slope, not road elevation
 
 
+DIRT_BANK_M = float(os.environ.get("BNE_DIRT_BANK", "0.055"))   # cross slope a broken dirt road leans to (m per m)
+DIRT_BANK_WAVES = ((27.0, 1.0), (13.0, 0.6), (7.0, 0.35))      # how often the lean changes sides (m)
+
+
+def dirt_bank(xy, spec, ext=(0, 0), step=PROFILE_STEP):
+    """The cross slope a dirt road leans to along itself (m per m toward its left): now the left side is low, now the
+    right, at a few scales -- a pothole on one side of the road rather than a wave across the whole of it. Seeded by the
+    road's own position, so every process builds the same. None for a built road or BNE_DIRT_BANK 0."""
+    if spec.kind in roadsmod.BUILT or DIRT_BANK_M <= 0.0:
+        return None
+    xy = np.asarray(xy, np.float64)[:, :2]
+    if len(xy) < 3:
+        return None
+    s_ = np.r_[0.0, np.cumsum(np.hypot(*np.diff(xy, axis=0).T))]
+    seed = (int(round(float(xy[0, 0]) * 11.0)) * 2654435761 + int(round(float(xy[0, 1]) * 11.0)) * 40503) & 0x7FFFFFFF
+    rng = np.random.default_rng(seed)
+    out = np.zeros(len(xy))
+    norm = 0.0
+    for size, share in DIRT_BANK_WAVES:
+        if s_[-1] < size:
+            continue
+        knots = rng.uniform(-1.0, 1.0, int(s_[-1] / size) + 3)
+        t = s_ / size
+        i0 = np.clip(np.floor(t).astype(int), 0, len(knots) - 2)
+        f = t - i0
+        f = f * f * (3.0 - 2.0 * f)
+        out += share * (knots[i0] * (1.0 - f) + knots[i0 + 1] * f)
+        norm += share * share
+    if float(out.std()) > 1e-9:
+        out *= DIRT_BANK_M / math.sqrt(norm)
+    if ext[0] or ext[1]:                      # a junction is level across: the lean fades out at the ends
+        n = len(out)
+        k = max(1, int(min(n, 12)))
+        ramp = np.ones(n)
+        ramp[:k] = np.linspace(0.0, 1.0, k)
+        ramp[-k:] = np.linspace(1.0, 0.0, k)
+        out *= ramp
+    return out
+
+
 def bank(xy, spec, abut=(False, False), ext=(0, 0)):
     """(n,) the cross slope of a road part's centreline xy (n, 2) (m per m toward its left), or None (not banked)."""
-    if not BANK_ON or spec.kind not in roadsmod.BUILT or spec.cls not in BANK_DESIGN or len(xy) < 3:
+    if spec.kind not in roadsmod.BUILT:
+        return dirt_bank(xy, spec, ext)
+    if not BANK_ON or spec.cls not in BANK_DESIGN or len(xy) < 3:
         return None
     v, f = BANK_LINK if getattr(spec, "link", False) else BANK_DESIGN[spec.cls]
     r_min = v * v / (127.0 * (BANK_E_MAX + f))
