@@ -60,10 +60,12 @@ SIDE_PENALTY = 4.0      # a tile off the path counts this many times its sideway
 
 # class -> (width m, paved by default). Classes not here (footway, path, steps, cycleway, ...) are
 # left out for now.
+# (a forest track: one lane, 2.5 m -- it was 3.5, as wide as a village street in the drawing, the user 2026-11-02:
+# "the forest roads are not even on the map, make them narrower than the secondary ones")
 STYLE = {
     "motorway": (11.0, True), "trunk": (9.0, True), "primary": (8.0, True), "secondary": (7.5, True),
     "tertiary": (6.5, True), "residential": (6.0, True), "living_street": (5.0, True),
-    "unclassified": (5.5, True), "service": (4.0, True), "track": (3.5, False), "unknown": (5.0, True),
+    "unclassified": (5.5, True), "service": (4.0, True), "track": (2.5, False), "unknown": (5.0, True),
     # racetracks (OpenStreetMap highway=raceway, osmtags.raceways: GitHub #143): a circuit's typical 12 m unless its
     # width is mapped; no markings, sidewalks, furniture or traffic (not in those classes' sets nor navgraph.DRIVE),
     # and graded by the terrain alone (grading.UNGRADED: an oval's banking stays)
