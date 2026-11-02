@@ -548,6 +548,8 @@ DIRT_MAJOR_SHARE = float(os.environ.get("BNE_DIRT_MAJOR", "0.2"))  # a MAIN dirt
 # which dirt roads count as "main" (the ones kept soft): the classes a country road is signed as, not just the
 # motorway ones (a mapped `secondary` gravel road is a main road where you drive it at 80 km/h)
 DIRT_SOFT_CLASSES = {"motorway", "trunk", "primary", "secondary", "tertiary"}
+# a forest track (highway=track) is worse than any of them: "you cannot even get up to speed on it" (the user, 2026-11-02)
+DIRT_TRACK_SHARE = float(os.environ.get("BNE_DIRT_TRACK", "2.5"))
 DIRT_VERTEX_STEP = 2.0          # m between a dirt road's plan vertices (4 m smoothed a pothole away)
 DIRT_UNDULATION_M = 0.15        # m: the soft rise and fall a country road keeps between its potholes
 DIRT_UNDULATION_WAVES = ((10.0, 1.0), (6.0, 0.8))
@@ -575,7 +577,7 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
     or a main one. The sizes are metres; BNE_DIRT_BUMP scales the lot (1: as here, 0: off)."""
     if spec.kind in roadsmod.BUILT or DIRT_ROUGH <= 0.0:
         return None
-    scale = DIRT_MAJOR_SHARE if spec.cls in DIRT_SOFT_CLASSES else 1.0
+    scale = DIRT_TRACK_SHARE if spec.cls == "track" else (DIRT_MAJOR_SHARE if spec.cls in DIRT_SOFT_CLASSES else 1.0)
     if scale <= 0.0:
         return None
     xy = np.asarray(xy, np.float64)[:, :2]
@@ -637,8 +639,11 @@ def _plan(xy, z, spec, abut=(False, False), ext=(0, 0), step=PROFILE_STEP, bank_
     bumps = dirt_bumps(xy, spec, len(z), ext, step)
     if bumps is not None:                       # (not smoothed again: a pothole's edge is sharp, that is the point)
         z0 = zs + bumps[ext[0]:len(z) - ext[1]]
-        if DIRT_STEP_MAX_M > 0.0 and len(z0) > 1:   # but no walls: a pothole's far side is a slope, not a cliff
-            d = np.clip(np.diff(z0), -DIRT_STEP_MAX_M, DIRT_STEP_MAX_M)
+        cap = DIRT_STEP_MAX_M
+        if bumps is not None and spec.cls == "track":       # a forest track may be steeper: it is a track, not a road
+            cap = DIRT_STEP_MAX_M * 1.6
+        if cap > 0.0 and len(z0) > 1:               # but no walls: a pothole's far side is a slope, not a cliff
+            d = np.clip(np.diff(z0), -cap, cap)
             capped = np.r_[z0[0], z0[0] + np.cumsum(d)]
             # (clipping loses height where it bites: give it back smoothed, so it stays local -- a straight tilt across
             # the whole road leaned it into the ground, the further the deeper)
