@@ -543,8 +543,8 @@ def profile_sigma(spec):
     return max(SIGMA_M, CLASS_SIGMA_M.get(spec.cls, SIGMA_M)) if not getattr(spec, "link", False) else SIGMA_M
 
 
-DIRT_BUMP_M = float(os.environ.get("BNE_DIRT_BUMP", "0.07"))   # m: the bumps a minor dirt road gets
-DIRT_BUMP_WAVES = ((23.0, 1.0), (11.0, 0.55), (5.5, 0.3))      # (wavelength m, share of the amplitude)
+DIRT_BUMP_M = float(os.environ.get("BNE_DIRT_BUMP", "0.16"))   # m: the bumps a minor dirt road gets
+DIRT_BUMP_WAVES = ((14.0, 1.0), (7.0, 0.6), (3.5, 0.35), (2.0, 0.2))   # (wavelength m, share of the amplitude)
 
 
 def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
