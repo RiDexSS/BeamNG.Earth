@@ -543,16 +543,19 @@ def profile_sigma(spec):
     return max(SIGMA_M, CLASS_SIGMA_M.get(spec.cls, SIGMA_M)) if not getattr(spec, "link", False) else SIGMA_M
 
 
-DIRT_BUMP_M = float(os.environ.get("BNE_DIRT_BUMP", "0.16"))   # m: the bumps a minor dirt road gets
-DIRT_BUMP_WAVES = ((14.0, 1.0), (7.0, 0.6), (3.5, 0.35), (2.0, 0.2))   # (wavelength m, share of the amplitude)
+DIRT_BUMP_M = float(os.environ.get("BNE_DIRT_BUMP", "0.16"))   # m: the roughness of a minor dirt road (std)
+DIRT_BUMP_WAVES = ((10.0, 1.0), (6.0, 0.8), (4.0, 0.6))        # (m of the noise's knots, share of the amplitude)
+DIRT_POTHOLE_M = float(os.environ.get("BNE_DIRT_POTHOLE", "0.16"))   # m: the deepest dip of a pothole (0: none)
+DIRT_POTHOLE_EVERY_M = 45.0     # m of road per pothole, on average
 
 
 def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
-    """The bumps a minor dirt road carries, one per profile sample (n: the samples, ext: how many lie past the part's
-    ends): three sines seeded by the road's own position, so every process builds the same ones. None for a built road
-    or a main one (the elevation data in Russia is a 30 m mosaic: smooth at every scale a dirt road is rough at, so the
-    bumps are added rather than followed)."""
-    if spec.kind in roadsmod.BUILT or spec.cls in MAJOR_CLASSES or DIRT_BUMP_M <= 0.0:
+    """The roughness a minor dirt road carries, one value per profile sample (n samples, ext: how many lie past the
+    part's ends): seeded value noise at a few scales (the plan's vertices are VERTEX_STEP apart, so nothing shorter
+    survives) plus the odd pothole, from the road's own position -- the same in every process. None for a built road or
+    a main one (the elevation data in Russia is a 30 m mosaic: smooth at every scale a dirt road is rough at, so the
+    roughness is added rather than followed)."""
+    if spec.kind in roadsmod.BUILT or spec.cls in MAJOR_CLASSES or (DIRT_BUMP_M <= 0.0 and DIRT_POTHOLE_M <= 0.0):
         return None
     xy = np.asarray(xy, np.float64)[:, :2]
     if len(xy) < 2 or n <= 0:
@@ -561,9 +564,26 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
     seed = (int(round(float(xy[0, 0]) * 7.0)) * 7919 + int(round(float(xy[0, 1]) * 7.0)) * 104729) & 0x7FFFFFFF
     rng = np.random.default_rng(seed)
     out = np.zeros(n)
-    for wavelength, share in DIRT_BUMP_WAVES:
-        out += share * np.sin(2.0 * np.pi * s_ / wavelength + float(rng.uniform(0.0, 2.0 * np.pi)))
-    return out * DIRT_BUMP_M
+    total_share = 0.0
+    for knot_m, share in DIRT_BUMP_WAVES:          # value noise: a random height per knot, smoothstepped between
+        if s_[-1] < knot_m:
+            continue
+        knots = rng.normal(0.0, 1.0, int(s_[-1] / knot_m) + 3)
+        t = s_ / knot_m
+        i0 = np.clip(np.floor(t).astype(int), 0, len(knots) - 2)
+        f = t - i0
+        f = f * f * (3.0 - 2.0 * f)
+        out += share * (knots[i0] * (1.0 - f) + knots[i0 + 1] * f)
+        total_share += share * share
+    if len(out) and float(out.std()) > 1e-9:
+        out *= DIRT_BUMP_M / math.sqrt(total_share)   # (the sum's own deviation, so DIRT_BUMP_M is its size)
+    if DIRT_POTHOLE_M > 0.0 and s_[-1] > 20.0:         # potholes: a few deep dips, at random places
+        for _ in range(int(rng.poisson(max(0.5, s_[-1] / DIRT_POTHOLE_EVERY_M)))):
+            c = float(rng.uniform(0.0, s_[-1]))
+            w = float(rng.uniform(3.5, 7.0))
+            d = float(rng.uniform(0.5, 1.0)) * DIRT_POTHOLE_M
+            out -= d * np.exp(-((s_ - c) / w) ** 2)
+    return out
 
 
 def _plan(xy, z, spec, abut=(False, False), ext=(0, 0), step=PROFILE_STEP, bank_xy=None, bank_ext=None):
