@@ -545,17 +545,17 @@ def profile_sigma(spec):
 
 DIRT_ROUGH = float(os.environ.get("BNE_DIRT_BUMP", "1.0"))    # strength of a minor dirt road's damage (1: as below)
 DIRT_VERTEX_STEP = 2.0          # m between a dirt road's plan vertices (4 m smoothed a pothole away)
-DIRT_UNDULATION_M = 0.05        # m: the soft rise and fall a country road keeps between its potholes
+DIRT_UNDULATION_M = 0.10        # m: the soft rise and fall a country road keeps between its potholes
 DIRT_UNDULATION_WAVES = ((10.0, 1.0), (6.0, 0.8))
-DIRT_POTHOLE_EVERY_M = 11.0     # m of road per pothole, on average
-DIRT_POTHOLE_W_M = (1.2, 3.2)   # m: a pothole's width
-DIRT_POTHOLE_D_M = (0.05, 0.16)  # m: its depth
-DIRT_PATCH_EVERY_M = 28.0       # m of road per broken patch (a step of a few cm with soft edges)
+DIRT_POTHOLE_EVERY_M = 7.0      # m of road per pothole, on average
+DIRT_POTHOLE_W_M = (2.0, 4.5)   # m: a pothole's width
+DIRT_POTHOLE_D_M = (0.12, 0.30)  # m: its depth
+DIRT_PATCH_EVERY_M = 18.0       # m of road per broken patch (a step of a few cm with soft edges)
 DIRT_PATCH_W_M = (3.0, 7.0)
-DIRT_PATCH_D_M = (0.02, 0.055)
-DIRT_PIT_EVERY_M = 220.0        # m of road per deep pit
+DIRT_PATCH_D_M = (0.04, 0.10)
+DIRT_PIT_EVERY_M = 150.0        # m of road per deep pit
 DIRT_PIT_W_M = (2.0, 4.5)
-DIRT_PIT_D_M = (0.15, 0.28)
+DIRT_PIT_D_M = (0.25, 0.45)
 
 
 def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
