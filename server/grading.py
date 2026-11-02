@@ -51,7 +51,9 @@ SIGMA_MAJOR_M = float(os.environ.get("BNE_GRADE_MAJOR", "40"))
 # and walls on flat land, GitHub #335. Not secondary yet: Otto Road's junction with I-80's ramps came out 0.29 m apart
 # once its dip under I-80 (underpass_offsets) was laid on the longer smoothing; the ramps' pins need a look first)
 MAJOR_CLASSES = ("motorway", "trunk", "primary")      # (not their slip roads: Overture's subclass "link", Spec.link)
-DIRT_SIGMA_M = 8.0          # m, profile smoothing of gravel / dirt roads (5 followed the DEM's bumps: GitHub #414)
+DIRT_SIGMA_M = 8.0          # m, profile smoothing of gravel / dirt roads (the main ones: they stay smooth)
+# a minor dirt road follows the elevation data closely instead, so it is bumpy and cannot be taken flat out
+DIRT_SIGMA_MINOR_M = float(os.environ.get("BNE_DIRT_SIGMA", "2.5"))   # (5 followed the DEM's bumps: GitHub #414)
 # longer smoothing for the mid classes too (mpsteppe's PR #289: real roads have long vertical curves, the larger the
 # longer; 12 m left bumps the roads do not have); MAJOR_CLASSES keep SIGMA_MAJOR_M
 CLASS_SIGMA_M = {"secondary": 25.0, "tertiary": 20.0, "unclassified": 16.0, "residential": 14.0}
@@ -79,7 +81,9 @@ BUCKET = 32.0               # m, query-point buckets
 ROAD_LIFT = 0.04            # m the physics ground is raised under roads (see Grader.apply)
 BLEND_R = 4.0               # m: roads near each other blend their targets by 1 / (1 + (d / BLEND_R)^2)
 PROFILE_ZOOM = int(os.environ.get("BNE_DEM_ZOOM", "16"))   # DEM zoom of the profiles (one zoom for every caller)
-WALL_CUT_M = 2.0            # a road cut deeper than this into the ground: a retaining wall at the core's edge
+# a road cut deeper than this into the ground: a retaining wall at the core's edge (BNE_WALL_CUT: 99 = no walls at
+# all, the cut is a slope instead -- the user, 2026-11-02: "remove the vertical walls where a road goes down")
+WALL_CUT_M = float(os.environ.get("BNE_WALL_CUT", "2.0"))
 WALL_T_M = 0.8              # (roadmesh.retaining_walls) and the ground at its natural height right behind it, over
                             # this; on a 1:2 slope Central Park's sunken transverse was a grassy ditch between its
                             # stone walls (the user, 2026-10-17)
@@ -531,7 +535,9 @@ def _point_along(line, d):
 def profile_sigma(spec):
     """m: the profile smoothing of a road of this spec."""
     if spec.kind not in roadsmod.BUILT:
-        return DIRT_SIGMA_M
+        if spec.cls in MAJOR_CLASSES:
+            return DIRT_SIGMA_M          # a main dirt road stays as smooth as it was
+        return DIRT_SIGMA_MINOR_M        # a minor one keeps the ground's own bumps
     if spec.cls in MAJOR_CLASSES and not getattr(spec, "link", False):
         return max(SIGMA_M, SIGMA_MAJOR_M)
     return max(SIGMA_M, CLASS_SIGMA_M.get(spec.cls, SIGMA_M)) if not getattr(spec, "link", False) else SIGMA_M
