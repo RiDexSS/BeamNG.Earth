@@ -1656,6 +1656,7 @@ YARD_ROAD_CLEAR_M = 2.5         # m beyond a road's own half width a fence piece
 YARD_NEIGHBOUR_M = 1.0          # m a piece keeps out of another building's box
 YARD_MIN_AREA, YARD_MAX_AREA = 35.0, 700.0
 YARD_MIN_M = 3.0                # m: a yard this small is not worth a fence
+YARD_CELL_MARGIN_M = 40.0       # m of the neighbouring map cells whose roads a yard keeps off too
 YARD_CLASSES = {"house", "detached", "semidetached_house", "terrace", "bungalow", "villa", "cabin", "farmhouse",
                 "residential", "apartments", "hut"}
 YARD_TOKEN = (METALWALL, (150, 148, 140, 255))
@@ -1782,8 +1783,8 @@ def yard_road_lines(frame, road_layers, x0, y0):
         specs = roadsmod.road_specs(f)
         for i in range(len(f)):
             sp = specs[i] if specs is not None else None
-            if sp is not None and sp.kind not in roadsmod.BUILT:
-                continue
+            if sp is not None and sp.kind not in ("paved", "cobble", "gravel", "dirt"):
+                continue                    # (dirt and gravel tracks count too: a fence across one blocks it all the same)
             a = f.coord_off[f.ring_off[f.part_off[i]]]
             b = f.coord_off[f.ring_off[f.part_off[i + 1]]]
             if b - a < 2:
@@ -3207,10 +3208,25 @@ def road_tile(frame, tx, ty, md, ground, lines=None, props=None, items=None):
     fences = ()
     try:                                    # the mapped fences and walls: one more mesh part of the same tile
         cells = roads.cells_of_tile(frame, tx, ty, margin=0.0)
+        near = roads.cells_of_tile(frame, tx, ty, margin=YARD_CELL_MARGIN_M)
         infra = [md.cell(k, layers=("infrastructure",), kind="demand").layers.get("infrastructure") for k in cells]
         fences = fence_lines(frame, infra, x0, y0, ground)
+        if fences and yards_off:             # a mapped fence drawn across a carriageway is bad data: left out
+            _rp = [(np.asarray(ln[0], np.float64)[:, :2] - [x0, y0], np.full(len(ln[0]), float(ln[1])))
+                   for ln in yards_off]
+            keep = []
+            for item in fences:
+                xy = np.asarray(item[0], np.float64)
+                ok = True
+                for k in range(len(xy) - 1):
+                    if _road_penetration(xy[k], xy[k + 1], [q for q, _h in _rp], [h for _q, h in _rp], 0.5) > 0.0:
+                        ok = False
+                        break
+                if ok:
+                    keep.append(item)
+            fences = keep
         yards_off = lines if lines else yard_road_lines(frame, [md.cell(k, layers=("roads",), kind="demand")
-                                                               .layers.get("roads") for k in cells], x0, y0)
+                                                               .layers.get("roads") for k in near], x0, y0)
         fences += yard_fence_lines(items, yards_off, x0, y0, frame, ground)
         fm = fence_mesh(fences)
         if fm is not None:                  # into the first part: a tile's parts are capped (roads.BLD_PARTS_MAX)
