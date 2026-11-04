@@ -217,6 +217,18 @@ OSM_LANES = (1, 12)     # a lane count outside this is not believed
 OSM_WIDTH_M = (2.0, 40.0)
 
 
+def _osm_text(feats, name, i):
+    """OpenStreetMap's text value `name` of feature i (osmtags.join's attrs column osm_<name>), lowercased, or ""."""
+    col = feats.attrs.get("osm_" + name)
+    if col is None:
+        return ""
+    try:
+        v = col[i]
+    except (IndexError, TypeError, ValueError):
+        return ""
+    return str(v).strip().lower() if v is not None else ""
+
+
 def _osm(feats, name, i, lo=None, hi=None):
     """OpenStreetMap's value `name` of feature i (osmtags.join's attrs column osm_<name>), or None (absent, not a number,
     outside lo..hi)."""
@@ -1189,9 +1201,98 @@ def _lidar_gaps(feats, i, rngs):
     return out
 
 
+OVERRIDES_NAME = "overrides.json"   # in the app's data dir (apppaths.data_dir): hand fixes for the map data
+
+
+def overrides_path():
+    """<data dir>/overrides.json: way / relation id -> {"tunnel"|"bridge": true | [start, end]} (fractions of the
+    feature). Fixes a spot whose own data has no level rule without waiting for the next map release, e.g. a road
+    under a railway mapped as an embankment on both sides (Perm, Pervomayskaya St, 2026-10-27). Read once per
+    process; a broken file is reported once and ignored."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # launcher.py's folder (earthd._app_modules)
+    try:
+        if root not in sys.path:
+            sys.path.append(root)
+        import apppaths
+        data = apppaths.data_dir()
+    except Exception:                        # (the packaged app, a source run from server/: the default folder)
+        data = os.path.join(os.path.expanduser("~"), ".cache", "beamng-earth")
+    return os.path.join(data, OVERRIDES_NAME)
+
+
+_overrides_cache = None
+
+
+def overrides():
+    """{id: {"tunnel"|"bridge": True | (start, end)}}: the parsed file ({} when there is none)."""
+    global _overrides_cache
+    if _overrides_cache is None:
+        table = {}
+        path = overrides_path()
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            ways = data.get("ways", data) if isinstance(data, dict) else {}
+            for k, v in (ways.items() if isinstance(ways, dict) else ()):
+                if isinstance(v, str):
+                    v = {v: True}
+                if not isinstance(v, dict):
+                    continue
+                key = str(k).strip()
+                if key[:1] in ("w", "W", "r", "R") and key[1:].isdigit():
+                    key = key[1:]
+                key = key.split("@", 1)[0]
+                rules = {}
+                for kind, r in v.items():
+                    kind = str(kind).strip().lower()
+                    if kind not in ("tunnel", "bridge"):
+                        continue
+                    if r is True or r == "yes" or r == 1:
+                        rules[kind] = (0.0, 1.0)
+                    elif isinstance(r, (list, tuple)) and len(r) == 2:
+                        try:
+                            a, b = float(r[0]), float(r[1])
+                        except (TypeError, ValueError):
+                            continue
+                        if 0.0 <= a < b <= 1.0:
+                            rules[kind] = (a, b)
+                if rules:
+                    table[key] = rules
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError) as e:
+            log.warning("overrides: %s: %s (ignored)", path, e)
+        if table:
+            log.info("overrides: %d hand-fixed level range(s) from %s", len(table), path)
+        _overrides_cache = table
+    return _overrides_cache
+
+
+def override_ranges(feats, i):
+    """The level ranges overrides() give feature i, or None (its own data stands). Pure given the file."""
+    table = overrides()
+    if not table:
+        return None
+    rec = feats.attrs.get("src_record")
+    if rec is None:
+        return None
+    key = str(rec[i]).split("@", 1)[0]
+    if key[:1] in ("w", "W", "r", "R") and key[1:].isdigit():
+        key = key[1:]
+    rules = table.get(key)
+    if not rules:
+        return None
+    out = [(a, b, "tunnel") for kind, (a, b) in rules.items() if kind == "tunnel"]
+    out += [(a, b, "bridge") for kind, (a, b) in rules.items() if kind == "bridge"]
+    return sorted(out)
+
+
 def _level_ranges(feats, i):
     """tag_level_ranges with the grade separations the map has no bridge for (gradesep.py: the cell's own, from its
     roads and its neighbours'), where no range of the map's is, and its underpasses' tunnel ranges made ground."""
+    over = override_ranges(feats, i)             # a hand fix (overrides.json) wins over the map's own rules
+    if over:
+        return over
     out = tag_level_ranges(feats, i)
     hook = feats.__dict__.get("_bnge_gradesep")
     extra = hook(feats).get(i) if hook is not None else None
@@ -2380,6 +2481,26 @@ def _unbuilt_all(feats):
                     share[i] += (b - a) if b > a else 1.0      # (no range: the whole feature)
             out |= share >= UNBUILT_SHARE
     return out
+
+
+def _urban_samples(lonlat):
+    """Sample the same road uniformly regardless of source-vertex clustering.
+
+    The endpoint-inclusive spacing is at most URBAN_SAMPLE_M; original vertices
+    are interpolated by cumulative distance, never counted as urban-context votes.
+    Geometry itself remains untouched for widths, banking, bridges and rendering.
+    """
+    ll = np.asarray(lonlat, np.float64)
+    if len(ll) < 2:
+        return ll
+    latitude = .5 * (float(ll[:, 1].min()) + float(ll[:, 1].max()))
+    scale = np.array([111320. * math.cos(math.radians(latitude)), 110540.])
+    distance = np.r_[0., np.cumsum(np.linalg.norm(np.diff(ll, axis=0) * scale, axis=1))]
+    if distance[-1] < 1e-8:
+        return ll[:1]
+    count = max(2, int(math.ceil(distance[-1] / URBAN_SAMPLE_M)) + 1)
+    stations = np.linspace(0., distance[-1], count)
+    return np.column_stack([np.interp(stations, distance, ll[:, axis]) for axis in (0, 1)])
 
 
 def _urban_samples(lonlat):

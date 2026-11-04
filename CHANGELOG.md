@@ -2,8 +2,6 @@
 
 What changed in each release of BeamNG.Earth, newest first.
 
-## Unreleased
-
 ## 1.8.1 beta (2026-11-04)
 
 Works with BeamNG.drive 0.40.4.
@@ -332,6 +330,9 @@ Works with BeamNG.drive 0.40.4.
 
 ### Development builds
 - Only the newest three development builds are kept on the releases page, so the betas are easier to find.
+- Keep bridge endpoint constraints attached to mapped road topology without displacing the deck. Spread
+  terrain-clearance lifts relative to the solved grade while preserving original floor peaks and existing
+  deck heights, reducing artificial approach cliffs without flattening genuine hills.
 
 ## 1.7.3 beta (2026-10-30)
 

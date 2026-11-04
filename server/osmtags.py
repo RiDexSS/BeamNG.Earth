@@ -54,6 +54,10 @@ COLUMNS = {
     "smoothness": "smoothness",
     "osm_surface": "surface",
     "osm_oneway": "oneway",
+    # a bridge / tunnel the geometry's own source does not carry (Overture's relation segments have no level
+    # rules: Yartsevskaya St in Kuntsevo, a tunnel under the railway, was drawn at grade, 2026-10-27)
+    "tunnel": "tunnel",
+    "bridge": "bridge",
     "osm_layer": "TRY_CAST(layer AS INTEGER)",
     # for the segments Overture took from a relation (no way id: Samara's Novo-Sadovaya, "r3851280@53", drawn 10 m wide
     # instead of its 6 lanes, the user 2026-10-24): the way of the same name around them (join)
@@ -63,16 +67,18 @@ COLUMNS = {
     "osm_highway": "CASE WHEN highway IN ('construction', 'proposed') THEN highway END",
     "bx0": "bbox.xmin", "by0": "bbox.ymin", "bx1": "bbox.xmax", "by1": "bbox.ymax",
 }
-TEXT_COLUMNS = {"sidewalk", "lit", "smoothness", "osm_surface", "osm_oneway", "name", "osm_highway"}
+TEXT_COLUMNS = {"sidewalk", "lit", "smoothness", "osm_surface", "osm_oneway", "name", "osm_highway", "tunnel",
+                "bridge"}
 INT_COLUMNS = {"lanes", "osm_layer"}
 GROUPS_FILE = "groups.json"     # the version's parsed row groups (OsmTags._groups)
 TABLE_DIR = "rg"        # a row group's decoded ways (OsmTags._table), in the version's folder
 TABLE_MEM = 6           # decoded row groups kept in memory (~6 MB each; a place's cells share 3-5)
 EXACT32 = {"bx0", "by0", "bx1", "by1", "lanes", "osm_layer"}   # float32 (the file's bbox; small integers)
 TABLE_WAIT_S = 60.0     # a row group another process decodes is waited for this long
-USED = {"id", "bbox", "lanes", "width", "maxspeed", "sidewalk", "lit", "smoothness", "surface", "oneway", "layer", "name"}
+USED = {"id", "bbox", "lanes", "width", "maxspeed", "sidewalk", "lit", "smoothness", "surface", "oneway", "layer",
+        "name", "tunnel", "bridge"}
 FLOATS = ("lanes", "width", "maxspeed", "osm_layer")
-TEXTS = ("sidewalk", "lit", "smoothness", "osm_surface", "osm_oneway", "osm_highway")
+TEXTS = ("sidewalk", "lit", "smoothness", "osm_surface", "osm_oneway", "osm_highway", "tunnel", "bridge")
 UNBUILT = ("construction", "proposed")      # osm_highway's values: not drawn (roads.unbuilt)
 NAME_MATCH_M = 25.0     # m a segment's middle may lie outside the bbox of the same-named way it takes the tags of
 ONEWAY_YES = ("yes", "1", "-1", "true")
