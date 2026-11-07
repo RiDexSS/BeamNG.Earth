@@ -786,6 +786,11 @@ TURBINE_DROP_M = 5000.0
 TURBINE_PER_POSE = 2       # bounded batches: only populated cells request terrain elevations
 
 
+RESTART_REQUESTED = False    # the ground settings changed: main() leaves with apppaths.SERVER_RESTART_CODE (a new
+                             # server reads them; settingswatch.py, the settings page's World knobs)
+RESTART_SAY_S = 0.4          # s between the game's "Rebuilding..." status and the listener's close
+
+
 class Server:
     def __init__(self, user_dir, cache_dir, tile_workers=3, kfun=None,
                  hysteresis=farfield.HYSTERESIS, radius=farfield.RADIUS, far_format="cdae",
@@ -4560,6 +4565,28 @@ class Server:
             self.schedule_prune(keep_from)
 
 
+    def request_restart(self):
+        """The ground settings changed (settingswatch.py, the World page's knobs): a new server builds the world with
+        them. The game is told, the listener closes, and main() leaves with apppaths.SERVER_RESTART_CODE for the
+        launcher to start the next server; the mod reconnects and resyncs by itself (core.lua's restarted-server path).
+        Called from another thread: the stop goes through the loop."""
+        global RESTART_REQUESTED
+        loop, ev = getattr(self, "loop", None), getattr(self, "stop_event", None)
+        if RESTART_REQUESTED or loop is None or ev is None:
+            return
+        RESTART_REQUESTED = True
+        log.info("the ground settings changed: a new server builds the world with them")
+
+        def stop():
+            for c in list(self.connections):
+                try:
+                    c.status("Rebuilding the ground with the new settings...")
+                except Exception:
+                    pass
+            loop.call_later(RESTART_SAY_S, ev.set)      # (the status reaches the game first)
+        loop.call_soon_threadsafe(stop)
+
+
 # Per-anchor tile files (besides far_ / hm_) that prune() deletes with their anchor
 # A teleport's first block is built first without the road grading (make_provisional: the car is placed in ~5 s
 # instead of 15-60 s on a fresh place) and replaced by the graded one when that is built (terrain_refresh)
@@ -7452,9 +7479,24 @@ async def main_async(args):
           f"cache cap: {f'{disk.cap / cachemod.GB:g} GB' if disk.cap else 'unlimited'}"
           f"{', OFFLINE' if args.offline else ''})",
           flush=True)
+    # (a stop event: the ground settings changed and a new server has to take over; request_restart)
+    server.stop_event = asyncio.Event()
+    server.loop = asyncio.get_running_loop()
+    if args.user_dir:                       # (the settings page's World knobs applied without restarting the app)
+        try:
+            import settingswatch
+            settingswatch.watch(args.user_dir, server.request_restart,
+                                applied=settingswatch.applied_knobs(gradingmod))
+        except Exception as e:              # (the knobs then apply at the next start)
+            log.warning("ground settings watch: %s", e)
     try:
         async with srv:
-            await srv.serve_forever()
+            serving = asyncio.create_task(srv.serve_forever())
+            stopping = asyncio.create_task(server.stop_event.wait())
+            await asyncio.wait({serving, stopping}, return_when=asyncio.FIRST_COMPLETED)
+            serving.cancel()
+            stopping.cancel()
+            await asyncio.gather(serving, stopping, return_exceptions=True)
     finally:
         profile_task.cancel()
         try:
@@ -7942,6 +7984,14 @@ def main():
         asyncio.run(main_async(args))
     except KeyboardInterrupt:
         pass
+    if RESTART_REQUESTED:               # (the launcher starts a new server: it reads the ground settings)
+        code = 75
+        try:
+            apppaths, _b = _app_modules()
+            code = apppaths.SERVER_RESTART_CODE
+        except Exception:
+            pass
+        raise SystemExit(code)
 
 
 if __name__ == "__main__":

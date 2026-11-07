@@ -77,9 +77,10 @@ M.SCHEMA = {
   clouds = { kind = 'bool', default = true, label = 'Clouds' },
   weatherMode = { kind = 'enum', default = 'real', values = { 'real', 'manual' }, label = 'Weather' },
   realGravity = { kind = 'bool', default = true, label = 'Real gravity' },
-  -- the ground off the roads (server grading.py; cpupin.player_settings reads these from this file when the server
-  -- starts, as BNE_*): the forests keep the terrain's own roughness, the fields, towns and water stay flat (the user,
-  -- 2026-11-07). rougher / flatter, in metres of standard height: 0 is a flat world
+  -- the ground off the roads (server grading.py): the forests keep the terrain's own roughness, the fields, towns and
+  -- water stay flat (the user, 2026-11-07). The server watches this file (settingswatch.py): a change here restarts it
+  -- with these values as BNE_* (cpupin.player_settings) and the ground around the player is rebuilt. In metres of
+  -- standard height: 0 is a flat world
   forestRoughness = { kind = 'number', default = 0.35, min = 0, max = 1, label = 'Forest ground roughness (m)' },
   -- a forest track's surface: each 2 m vertex of the road tilted its own way (the "distorted triangles"), its potholes
   -- and their width (a share of a lane's), and the long soft undulation that read as a rollercoaster

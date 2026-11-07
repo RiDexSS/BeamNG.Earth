@@ -75,20 +75,30 @@ KNOB_ENV = (("forestRoughness", "BNE_TERRAIN_BUMP", 0.0, 1.0),
             ("trackWaves", "BNE_DIRT_TRACK_WAVE", 0.0, 1.0))
 
 
+def settings_file(user_dir):
+    """The mod's settings file in the game's user folder, or None: the game writes its file names in lower case on Linux
+    (settings/beamngearth.json), so either name."""
+    if not user_dir:
+        return None
+    for name in (MOD_SETTINGS[1], MOD_SETTINGS[1].lower()):
+        path = os.path.join(user_dir, MOD_SETTINGS[0], name)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def player_settings(user_dir):
     """{"cores": n, "priority": "normal", "models3dmr": False} of the player's choices on the settings page (absent:
     "auto" / "low" / on, or no settings file). The game writes its file names in lower case on Linux (settings/beamngearth.json)."""
     out = {}
-    if not user_dir:
+    path = settings_file(user_dir)
+    if path is None:
         return out
-    d = None
-    for name in (MOD_SETTINGS[1], MOD_SETTINGS[1].lower()):
-        try:
-            with open(os.path.join(user_dir, MOD_SETTINGS[0], name), encoding="utf-8") as f:
-                d = json.load(f)
-            break
-        except (OSError, ValueError):
-            continue
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return out
     if not isinstance(d, dict):
         return out
     cores = str(d.get("serverCores", "auto"))

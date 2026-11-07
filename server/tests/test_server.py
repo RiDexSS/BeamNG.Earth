@@ -262,6 +262,42 @@ class ServerHarness(unittest.TestCase):
             self.assertTrue(all(t.level == 0 for t in under))
 
 
+class RestartTest(unittest.TestCase):
+    """The World page's ground settings reach a new server (settingswatch.request_restart -> the launcher, which exits
+    with apppaths.SERVER_RESTART_CODE; the mod reconnects and resyncs)."""
+
+    def test_restart_asks_the_launcher(self):
+        ev = threading.Event()
+        said = []
+
+        class Loop:
+            def call_soon_threadsafe(self, f):
+                f()
+
+            def call_later(self, delay, f):
+                said.append(("later", delay))
+                f()
+
+        class Conn:
+            def status(self, text):
+                said.append(text)
+
+        server = SimpleNamespace(loop=Loop(), stop_event=ev, connections={Conn()})
+        old, earthd.RESTART_REQUESTED = earthd.RESTART_REQUESTED, False
+        try:
+            earthd.Server.request_restart(server)
+            self.assertTrue(earthd.RESTART_REQUESTED, "the launcher is asked for a new server")
+            self.assertIn("Rebuilding the ground with the new settings...", said)
+            self.assertTrue(ev.is_set(), "the listener stops")
+            earthd.Server.request_restart(server)        # (once, however many times it is asked)
+            self.assertEqual(len(said), 2)
+            earthd.RESTART_REQUESTED = False
+            earthd.Server.request_restart(SimpleNamespace())   # (no loop yet: nothing to stop)
+            self.assertFalse(earthd.RESTART_REQUESTED)
+        finally:
+            earthd.RESTART_REQUESTED = old
+
+
 class ServerTest(ServerHarness):
     far_format = "cdae"
 

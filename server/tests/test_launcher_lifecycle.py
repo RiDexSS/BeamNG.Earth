@@ -55,6 +55,30 @@ class GameLifecycleTest(unittest.TestCase):
                 self.assertTrue(result)
                 self.assertGreaterEqual(elapsed, 405)
 
+    def test_a_ground_restart_asks_for_a_new_server(self):
+        # (the settings page's World knobs: the server leaves with apppaths.SERVER_RESTART_CODE and the launcher
+        # starts a new one, which reads them; the game reconnects by itself)
+        clock = Clock()
+        server = mock.Mock()
+        server.poll.return_value = launcher.apppaths.SERVER_RESTART_CODE
+        server.returncode = launcher.apppaths.SERVER_RESTART_CODE
+        with mock.patch.object(launcher, "IS_WIN", False), \
+                mock.patch.object(launcher.time, "monotonic", side_effect=lambda: clock.now), \
+                mock.patch.object(launcher.time, "sleep", side_effect=clock.sleep), \
+                mock.patch.object(launcher, "game_alive", return_value=None), \
+                mock.patch.object(launcher, "say"):
+            self.assertEqual(launcher.wait_for_game(None, server), "restart")
+
+    def test_a_dead_server_still_stops_everything(self):
+        server = mock.Mock()
+        server.poll.return_value = 1
+        with mock.patch.object(launcher, "IS_WIN", False), \
+                mock.patch.object(launcher.time, "monotonic", side_effect=lambda: 0.0), \
+                mock.patch.object(launcher.time, "sleep"), \
+                mock.patch.object(launcher, "game_alive", return_value=None), \
+                mock.patch.object(launcher, "say"):
+            self.assertFalse(launcher.wait_for_game(None, server))
+
     def test_cancelled_launch_dialog_stops_services(self):
         result, elapsed = self.follow(dialog=lambda t: t < 5)
         self.assertFalse(result)

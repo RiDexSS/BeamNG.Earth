@@ -1037,6 +1037,8 @@ def wait_for_game(proc, server=None):
     gone_since = dialog_closed_since = first_seen = None
     while True:
         if server is not None and server.poll() is not None:
+            if server.returncode == apppaths.SERVER_RESTART_CODE:
+                return "restart"        # (the ground settings changed: a new server, the game reconnects)
             say("The world server stopped. See its log for details; restart BeamNG.Earth to reconnect.")
             return False
         now = time.monotonic()
@@ -1781,8 +1783,14 @@ def run(args):
         if args.no_game:
             say()
             say("Start BeamNG.drive and pick 'BeamNG.Earth' in Freeroam. Ctrl+C stops the server.")
-            server.wait()
-            return
+            while True:
+                server.wait()
+                if server.returncode != apppaths.SERVER_RESTART_CODE:
+                    return
+                say("The ground settings changed: restarting the world server...")
+                server = start_server(user_dir, extra, log_path, game_running=False)
+                if not wait_server_ready(server, log_path, port):
+                    raise SystemExit(1)
         watch_game_log(user_dir, time.time() - 5)
         if running:
             if not reload_game:
@@ -1799,8 +1807,22 @@ def run(args):
         say()
         say("In the game: Freeroam > BeamNG.Earth.  Closing the game stops the server.")
         say()
-        if wait_for_game(proc, server):
-            row("Game", "closed")
+        while True:
+            ended = wait_for_game(proc, server)
+            if ended != "restart":
+                if ended:
+                    row("Game", "closed")
+                break
+            # the settings page's World knobs changed: a new server reads them and rebuilds the ground around the
+            # player; the mod reconnects and resyncs by itself (the world is rebuilt for a few seconds)
+            say()
+            say("The ground settings changed: rebuilding the world around you...")
+            server = start_server(user_dir, extra, log_path, game_running=True)
+            if not wait_server_ready(server, log_path, port):
+                problem("the world server did not start again after the ground settings changed.",
+                        f"See {log_path} for the startup error, then start BeamNG.Earth again.")
+                raise SystemExit(1)
+            row("World server", "restarted (the ground settings changed)")
     finally:
         if beammp is not None:
             import bmplaunch
