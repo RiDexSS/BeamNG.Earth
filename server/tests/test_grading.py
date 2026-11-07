@@ -1046,6 +1046,96 @@ class DirtEndsTest(unittest.TestCase):
         xy = np.stack([np.arange(0.0, 200.0, 2.0), np.zeros(100)], 1)
         self.assertIsNone(grading.dirt_bumps(xy, spec, 100))
 
+class TerrainBumpsTest(unittest.TestCase):
+    """The land off the roads is uneven in the forests only (the user, 2026-11-07: "leave the unevenness only in the
+    forests, the fields and the rest flat")."""
+
+    def setUp(self):
+        self.old = (grading.TERRAIN_BUMPS_ON, grading.TERRAIN_ROUGH_M)
+        grading.TERRAIN_BUMPS_ON, grading.TERRAIN_ROUGH_M = True, 0.35
+
+    def tearDown(self):
+        grading.TERRAIN_BUMPS_ON, grading.TERRAIN_ROUGH_M = self.old
+
+    def test_forests_only(self):
+        la, lo = np.meshgrid(np.linspace(LAT, LAT + 0.002, 40), np.linspace(LON, LON + 0.002, 40), indexing="ij")
+        cover = np.zeros(la.shape)
+        cover[:, :20] = 1.0
+        b = grading.terrain_bumps(la, lo, cover)
+        self.assertTrue((b[:, 20:] == 0.0).all(), "the fields stay flat")
+        self.assertGreater(float(np.std(b[:, :20])), 0.1, "the forest keeps its roughness")
+        full = grading.terrain_bumps(la[:, :20], lo[:, :20])
+        self.assertAlmostEqual(float(np.std(b[:, :20])), float(np.std(full)), places=9,
+                               msg="in the forest: as rough as the open land was")
+        half = grading.terrain_bumps(la, lo, 0.5 * cover)
+        self.assertTrue(np.allclose(half[:, :20], 0.5 * b[:, :20]), "a thin wood's edge: half as rough")
+
+    def test_the_same_value_whatever_the_grid(self):
+        la = np.full((3, 5), LAT)
+        lo = np.full((3, 5), LON)
+        a = grading.terrain_bumps(la, lo, np.ones(la.shape))
+        b = grading.terrain_bumps(np.array([LAT]), np.array([LON]), np.ones((1, 1)))
+        self.assertAlmostEqual(float(a[1, 2]), float(b[0, 0]), places=12, msg="world-locked: blocks agree")
+
+    def test_a_graded_dem_roughens_only_the_forest(self):
+        class Dem:
+            def sample(self, la, lo, zoom, progress=None):
+                return np.zeros(np.shape(la))
+
+        class Grader:
+            def apply(self, la, lo, z):
+                return z
+        la = np.full((3, 3), LAT)
+        lo = np.full((3, 3), LON)
+        flat = grading.GradedDem(Dem(), Grader(), lambda a, b: np.zeros(np.shape(a)))
+        self.assertTrue((flat.sample(la, lo, 15) == 0.0).all(), "fields: the DEM as it is")
+        wood = grading.GradedDem(Dem(), Grader(), lambda a, b: np.ones(np.shape(a)))
+        self.assertGreater(float(np.abs(wood.sample(la, lo, 15)).max()), 0.0, "forest: roughened")
+
+
+class DirtFacetTest(unittest.TestCase):
+    """A forest track is hard to pass because the surface's triangles are distorted, not by long smooth waves (the user,
+    2026-11-07: "the world is built from triangles: distort those triangles on the roads")."""
+
+    def xy(self, n=400, step=2.0):
+        s = np.arange(n, dtype=np.float64) * step
+        return np.stack([s, np.zeros(n)], axis=1)
+
+    def test_vertices_tilt_their_own_way(self):
+        xy = self.xy()
+        spec = roads.Spec(3.5, "dirt", False, "track")
+        old = grading.DIRT_NODE_M
+        try:
+            grading.DIRT_NODE_M = 0.0
+            smooth = grading.dirt_bumps(xy, spec, len(xy))
+            grading.DIRT_NODE_M = 0.12
+            rough = grading.dirt_bumps(xy, spec, len(xy))
+            again = grading.dirt_bumps(xy.copy(), roads.Spec(3.5, "dirt", False, "track"), len(xy))
+        finally:
+            grading.DIRT_NODE_M = old
+        delta = rough - smooth
+        self.assertGreater(float(np.std(np.diff(delta[60:-60]))), 0.1,
+                           "a facet every vertex: the fine steps, not only the smooth damage")
+        self.assertAlmostEqual(float(np.mean(np.diff(delta[60:-60]) > 0.0)), 0.5, delta=0.1,
+                               msg="each vertex its own way, up or down")
+        self.assertTrue(np.array_equal(rough, again), "a hash of the world: the same track, the same facets")
+
+    def test_the_plan_keeps_the_facets(self):
+        xy = self.xy(n=200)
+        spec = roads.Spec(3.5, "dirt", False, "track")
+        plan = grading._plan(xy, np.full(len(xy), 100.0), spec)
+        self.assertGreater(float(np.percentile(np.abs(np.diff(plan.z)), 50)), 0.05,
+                           "the 2 m vertices differ: the heightfield between them is a facet")
+        self.assertAlmostEqual(float(plan.z[0]), 100.0, places=6)
+        self.assertAlmostEqual(float(plan.z[-1]), 100.0, places=6)
+
+    def test_a_main_dirt_road_stays_smooth(self):
+        xy = self.xy()
+        lane = grading.dirt_bumps(xy, roads.Spec(4.0, "dirt", False, "residential"), len(xy))
+        main = grading.dirt_bumps(xy, roads.Spec(7.0, "dirt", False, "secondary"), len(xy))
+        self.assertLess(float(np.std(np.diff(main[60:-60]))), 0.5 * float(np.std(np.diff(lane[60:-60]))))
+
+
 if __name__ == "__main__":
     unittest.main()
 
