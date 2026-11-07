@@ -7888,8 +7888,9 @@ def main():
     import budget
     try:                            # the settings page's Performance choices (GitHub #529): before the priority and
         args.nice, chosen = cpupin.apply_player_settings(args.user_dir, args.nice, NICE)    # the cores' split below
+        gradingmod.apply_env()      # (the settings page's terrain and dirt-road knobs, read after the import)
         if chosen:
-            log.info("the settings page: the server on %s", ", ".join(chosen))
+            log.info("the settings page: %s", ", ".join(chosen))
     except Exception as e:          # (the defaults then)
         log.warning("could not read the settings page's server choices: %s", e)
     if args.nice:

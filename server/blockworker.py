@@ -197,6 +197,8 @@ def init(cache_dir, offline, roads, grading, road_widths, surface, warm_q, log_l
     import sampler
     sampler.maybe_start(f".{os.getpid()}")      # BNGE_SAMPLE: this worker's own sampling profile (debugging)
     xproc.PRIORITY = nice
+    import grading as gradingmod
+    gradingmod.apply_env()      # (the settings page's terrain knobs: the workers inherit them, re-read as they start)
     _s = _State(cache_dir, offline, roads, grading, road_widths, surface, airports, sea, gas_stations)
     threading.Thread(target=_watch_parent, args=(os.getppid(),), daemon=True, name="parent-watch").start()
     if warm_q is not None:      # (only the block pools plan roads ahead: the far, road and far building pools pass None)

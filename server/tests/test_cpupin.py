@@ -133,6 +133,26 @@ class PlayerSettingsTest(unittest.TestCase):
         self.assertEqual(cpupin.player_settings(None), {})
         self.assertEqual(cpupin.player_settings("/nonexistent/user/dir"), {}, "no settings file: the defaults")
 
+    def test_ground_knobs_read_and_applied(self):
+        user = self.write({"forestRoughness": 0.5, "trackFacets": 0.12, "trackHoles": 2,
+                           "trackHoleWidth": 0.3, "trackWaves": 0.25})
+        knobs = {"BNE_TERRAIN_BUMP": "0.5", "BNE_DIRT_NODE": "0.12", "BNE_DIRT_TRACK": "2",
+                 "BNE_DIRT_TRACK_W": "0.3", "BNE_DIRT_TRACK_WAVE": "0.25"}
+        self.assertEqual(cpupin.player_settings(user)["env"], knobs)
+        env = {}
+        nice, notes = cpupin.apply_player_settings(user, 10, 10, env)
+        self.assertEqual((nice, env), (10, knobs))
+        self.assertIn("5 ground knobs", notes)
+        # a file from before the knobs: the server's own defaults (grading), nothing exported
+        self.assertEqual(cpupin.player_settings(self.write({})), {})
+        # out of range: clamped; not a number: left to the default
+        self.assertEqual(cpupin.player_settings(self.write({"trackHoles": 99, "trackFacets": "x"}))["env"],
+                         {"BNE_DIRT_TRACK": "3"})
+        # set by hand in the environment: that wins
+        env = {"BNE_DIRT_NODE": "0.2"}
+        cpupin.apply_player_settings(user, 10, 10, env)
+        self.assertEqual(env["BNE_DIRT_NODE"], "0.2")
+
     def test_applied_where_nothing_was_set_by_hand(self):
         user = self.write({"serverCores": "2", "serverPriority": "normal"})
         env = {}

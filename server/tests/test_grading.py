@@ -1046,6 +1046,27 @@ class DirtEndsTest(unittest.TestCase):
         xy = np.stack([np.arange(0.0, 200.0, 2.0), np.zeros(100)], 1)
         self.assertIsNone(grading.dirt_bumps(xy, spec, 100))
 
+class ApplyEnvTest(unittest.TestCase):
+    """The settings page's ground knobs reach grading as BNE_* after the modules are imported
+    (cpupin.apply_player_settings; earthd's and blockworker's starts)."""
+
+    def test_knobs_re_read(self):
+        names = ("TERRAIN_ROUGH_M", "TERRAIN_BUMPS_ON", "DIRT_NODE_M", "DIRT_TRACK_SHARE", "DIRT_TRACK_W",
+                 "DIRT_TRACK_WAVE_SHARE")
+        old = tuple(getattr(grading, n) for n in names)
+        try:
+            grading.apply_env({"BNE_TERRAIN_BUMP": "0.7", "BNE_TERRAIN_BUMPS": "off", "BNE_DIRT_NODE": "0.2",
+                               "BNE_DIRT_TRACK": "2", "BNE_DIRT_TRACK_W": "0.3", "BNE_DIRT_TRACK_WAVE": "0.5"})
+            self.assertEqual(tuple(getattr(grading, n) for n in names), (0.7, False, 0.2, 2.0, 0.3, 0.5))
+            grading.apply_env({})           # (nothing set: what it is now stays)
+            self.assertEqual(grading.DIRT_NODE_M, 0.2)
+            grading.apply_env({"BNE_DIRT_NODE": "bad"})
+            self.assertEqual(grading.DIRT_NODE_M, 0.2)
+        finally:
+            for n, v in zip(names, old):
+                setattr(grading, n, v)
+
+
 class TerrainBumpsTest(unittest.TestCase):
     """The land off the roads is uneven in the forests only (the user, 2026-11-07: "leave the unevenness only in the
     forests, the fields and the rest flat")."""

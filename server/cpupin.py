@@ -65,6 +65,14 @@ def split(share=SERVER_SHARE):
 MOD_SETTINGS = ("settings", "beamngEarth.json")
 CORE_CHOICES = ("1", "2", "3", "4", "6", "8")
 PRIORITIES = ("low", "normal")
+# The World page's ground knobs (settings.lua, grading.py reads the names at its start): the forests' roughness and the
+# forest tracks' damage. Only the knobs the file actually sets are exported; a file from before them keeps the server's
+# own defaults (grading.py).
+KNOB_ENV = (("forestRoughness", "BNE_TERRAIN_BUMP", 0.0, 1.0),
+            ("trackFacets", "BNE_DIRT_NODE", 0.0, 0.3),
+            ("trackHoles", "BNE_DIRT_TRACK", 0.0, 3.0),
+            ("trackHoleWidth", "BNE_DIRT_TRACK_W", 0.05, 1.0),
+            ("trackWaves", "BNE_DIRT_TRACK_WAVE", 0.0, 1.0))
 
 
 def player_settings(user_dir):
@@ -95,6 +103,20 @@ def player_settings(user_dir):
         out["teleport_full"] = env == "1"
     if d.get("models3dmr") is False:
         out["models3dmr"] = False
+    knob_env = {}
+    for key, name, lo, hi in KNOB_ENV:
+        v = d.get(key)
+        if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+            continue
+        try:
+            v = float(v)
+        except ValueError:
+            continue
+        if v != v:          # (NaN)
+            continue
+        knob_env[name] = f"{min(max(v, lo), hi):g}"
+    if knob_env:
+        out["env"] = knob_env
     return out
 
 
@@ -114,6 +136,13 @@ def apply_player_settings(user_dir, nice, default_nice, environ=None):
     if chosen.get("models3dmr") is False and not environ.get("BNE_3DMR"):
         environ["BNE_3DMR"] = "off"            # (threedmr.enabled; the worker processes inherit it)
         notes.append("no 3dmr.eu models")
+    knobs = 0
+    for name, val in chosen.get("env", {}).items():      # (grading.apply_env reads them after the import)
+        if not environ.get(name):
+            environ[name] = val
+            knobs += 1
+    if knobs:
+        notes.append(f"{knobs} ground knobs")
     return nice, notes
 
 

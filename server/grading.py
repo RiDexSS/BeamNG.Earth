@@ -4965,10 +4965,38 @@ def _hash01(i, j, salt=0):
     return (h & np.uint64(0xFFFFFF)).astype(np.float64) / float(0x1000000)
 
 
-# The land off the roads roughened (PR #677): opt-in (BNE_TERRAIN_BUMPS=on) until it is one kernel applied the same way
-# on every ground path (provisional blocks and far tiles too) and kept off towns, water and building sites; on, it is
-# ~0.3-0.5 s of numpy per million samples on every block, road tile and far tile (2026-11-05 merge review).
-TERRAIN_BUMPS_ON = os.environ.get("BNE_TERRAIN_BUMPS", "off") == "on"
+# The land off the roads roughened (PR #677): upstream opt-in (BNE_TERRAIN_BUMPS=on) until it is one kernel applied the
+# same way on every ground path (provisional blocks and far tiles too) and kept off towns, water and building sites; on,
+# it is ~0.3-0.5 s of numpy per million samples on every block, road tile and far tile (2026-11-05 merge review). This
+# build has it on by default, in the forests only (surface.Surface.forest; the user, 2026-11-07).
+TERRAIN_BUMPS_ON = os.environ.get("BNE_TERRAIN_BUMPS", "on") == "on"
+
+
+def _env_float(environ, name, current):
+    v = environ.get(name)
+    if v is None or v == "":
+        return current
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return current
+
+
+def apply_env(environ=None):
+    """Re-read the terrain and dirt-road knobs (BNE_TERRAIN_BUMP, BNE_TERRAIN_BUMPS, BNE_DIRT_NODE, BNE_DIRT_TRACK,
+    BNE_DIRT_TRACK_W, BNE_DIRT_TRACK_WAVE) from the environment. The settings page's values reach the server after the
+    modules are imported (cpupin.apply_player_settings exports them), and each block worker re-reads them as it starts,
+    so a knob changed in the game applies on the next start without a Python-side default of its own."""
+    global TERRAIN_ROUGH_M, TERRAIN_BUMPS_ON, DIRT_NODE_M, DIRT_TRACK_SHARE, DIRT_TRACK_W, DIRT_TRACK_WAVE_SHARE
+    environ = os.environ if environ is None else environ
+    TERRAIN_ROUGH_M = _env_float(environ, "BNE_TERRAIN_BUMP", TERRAIN_ROUGH_M)
+    bumps = environ.get("BNE_TERRAIN_BUMPS")
+    if bumps not in (None, ""):
+        TERRAIN_BUMPS_ON = bumps == "on"
+    DIRT_NODE_M = _env_float(environ, "BNE_DIRT_NODE", DIRT_NODE_M)
+    DIRT_TRACK_SHARE = _env_float(environ, "BNE_DIRT_TRACK", DIRT_TRACK_SHARE)
+    DIRT_TRACK_W = _env_float(environ, "BNE_DIRT_TRACK_W", DIRT_TRACK_W)
+    DIRT_TRACK_WAVE_SHARE = _env_float(environ, "BNE_DIRT_TRACK_WAVE", DIRT_TRACK_WAVE_SHARE)
 
 
 def terrain_bumps(lat, lon, cover=None):

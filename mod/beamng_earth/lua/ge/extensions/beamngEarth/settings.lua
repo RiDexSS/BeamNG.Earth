@@ -77,6 +77,16 @@ M.SCHEMA = {
   clouds = { kind = 'bool', default = true, label = 'Clouds' },
   weatherMode = { kind = 'enum', default = 'real', values = { 'real', 'manual' }, label = 'Weather' },
   realGravity = { kind = 'bool', default = true, label = 'Real gravity' },
+  -- the ground off the roads (server grading.py; cpupin.player_settings reads these from this file when the server
+  -- starts, as BNE_*): the forests keep the terrain's own roughness, the fields, towns and water stay flat (the user,
+  -- 2026-11-07). rougher / flatter, in metres of standard height: 0 is a flat world
+  forestRoughness = { kind = 'number', default = 0.35, min = 0, max = 1, label = 'Forest ground roughness (m)' },
+  -- a forest track's surface: each 2 m vertex of the road tilted its own way (the "distorted triangles"), its potholes
+  -- and their width (a share of a lane's), and the long soft undulation that read as a rollercoaster
+  trackFacets = { kind = 'number', default = 0.08, min = 0, max = 0.3, label = 'Forest track surface facets (m)' },
+  trackHoles = { kind = 'number', default = 1.5, min = 0, max = 3, label = 'Forest track potholes' },
+  trackHoleWidth = { kind = 'number', default = 0.45, min = 0.05, max = 1, label = 'Forest track pothole width' },
+  trackWaves = { kind = 'number', default = 0, min = 0, max = 1, label = 'Forest track soft waves' },
   -- grass and shrubs on the surface layers (groundcover.lua; needs the server's --surface on)
   groundCover = { kind = 'bool', default = true, label = 'Grass and shrubs' },
   groundCoverDensity = { kind = 'enum', default = 'normal', values = { 'low', 'normal', 'high' }, label = 'Grass density' },
@@ -136,7 +146,8 @@ M.SCHEMA = {
 M.ORDER = { 'quality', 'framePacing', 'terrainDetail', 'groundPhoto', 'trees', 'treeDistance', 'buildingDistance', 'objectDetail',
   'grassDistance', 'nightLights', 'distantTraffic', 'distantTrafficWithoutTraffic', 'distantTrafficQuality', 'rebaseDistance',
   'viewDistanceMode', 'viewDistanceKm', 'hazeStrength', 'skyMode', 'clouds',
-  'weatherMode', 'realGravity', 'groundCover', 'groundCoverDensity', 'rocks', 'roads', 'highwaySigns', 'directionSigns', 'models3dmr',
+  'weatherMode', 'realGravity', 'forestRoughness', 'trackFacets', 'trackHoles', 'trackHoleWidth', 'trackWaves',
+  'groundCover', 'groundCoverDensity', 'rocks', 'roads', 'highwaySigns', 'directionSigns', 'models3dmr',
   'dashboardSatellite',
   'hudVisible', 'statusBar', 'profilerMode', 'runtimeProfiler',
   'placeNamesOnline', 'creditsVisible', 'beammpOnLaunch',
