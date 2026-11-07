@@ -77,5 +77,48 @@ class ColourTest(unittest.TestCase):
         self.assertLess(np.abs(part[:, 10:54].astype(int) - out[:, 10:54].astype(int)).max(), 2)
 
 
+class SnowTest(unittest.TestCase):
+    def test_snow_from_november(self):
+        self.assertEqual(season.snow_amount(datetime.date(2026, 10, 25), 58.1), 0.0, "no snow in October")
+        self.assertGreater(season.snow_amount(datetime.date(2026, 11, 1), 58.1), 0.7)
+        self.assertEqual(season.snow_amount(datetime.date(2026, 11, 6), 58.1), 1.0, "the user's November")
+        self.assertEqual(season.snow_amount(datetime.date(2026, 1, 15), 58.1), 1.0)
+        self.assertAlmostEqual(season.snow_amount(datetime.date(2026, 3, 10), 58.1), 0.55, places=2, msg="melting")
+        self.assertEqual(season.snow_amount(datetime.date(2026, 4, 1), 58.1), 0.0)
+        self.assertEqual(season.snow_amount(datetime.date(2026, 11, 6), 5.0), 0.0, "tropics")
+        self.assertEqual(season.snow_amount(datetime.date(2026, 6, 1), -58.1), 1.0, "the southern winter")
+
+    def test_snow_modes(self):
+        self.assertEqual(season.snow_amount_for("off", 58.1), 0.0)
+        self.assertEqual(season.snow_amount_for("fall", 58.1), 0.0)
+        self.assertEqual(season.snow_amount_for("spring", 58.1), 0.0)
+        self.assertEqual(season.snow_amount_for("winter", 58.1), 1.0)
+        self.assertEqual(season.snow_amount_for("auto", 58.1, datetime.date(2026, 11, 6)), 1.0)
+
+    def test_snow_whitens_the_ground_not_the_water(self):
+        rng = np.random.default_rng(3)
+        rgb = np.zeros((64, 64, 3), np.uint8)
+        rgb[:, :32] = (60, 90, 40)                                      # grass, textured
+        rgb[:, :32] += rng.integers(0, 25, (64, 32, 3)).astype(np.uint8)
+        rgb[:, 32:] = (20, 40, 90)                                      # water
+        xm, ym = season.world_metres(np.full((17, 17), 58.1), np.linspace(56.2, 56.3, 17))
+        out = season.snow(rgb, xm, ym, 1.0)
+        lum = lambda a: (a.astype(np.float32) @ np.array([0.299, 0.587, 0.114], np.float32))
+        self.assertGreater(float(lum(out[:, :32]).mean()), float(lum(rgb[:, :32]).mean()) + 60, "the ground is white")
+        _, s0, _ = _hsv(rgb[:, :32])
+        _, s1, _ = _hsv(out[:, :32])
+        self.assertLess(float(s1.mean()), 0.25 * float(s0.mean()), "its colour is nearly gone")
+        self.assertGreater(float(np.asarray(out[:, :32], np.int16).std()), 3.0, "the photo's own texture stays")
+        self.assertTrue(np.array_equal(out[:, 32:], rgb[:, 32:]), "water stays bare")
+        self.assertTrue(np.array_equal(season.snow(rgb, xm, ym, 0.0), rgb), "no snow, the photo as it was")
+        self.assertTrue(np.array_equal(out, season.snow(rgb, xm, ym, 1.0)), "the same world, the same snow")
+        # the cover is world-anchored: a texture of the same place, rendered at another size, gets the same patches
+        wide = np.concatenate([rgb[:, :32]] * 2, 1)
+        wout = season.snow(wide, xm, ym, 1.0)
+        ratio = lum(wout[:, :32]) / np.maximum(lum(wide[:, :32]), 1.0)
+        part = lum(out[:, :32]) / np.maximum(lum(rgb[:, :32]), 1.0)
+        self.assertAlmostEqual(float(ratio.mean()), float(part.mean()), delta=0.05)
+
+
 if __name__ == "__main__":
     unittest.main()

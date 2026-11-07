@@ -1417,15 +1417,22 @@ class Imagery:
     SEASON_GRID = 17            # world positions for the season noise: on this grid, bilinear in between
 
     def _seasoned(self, where, rgb):
-        """rgb graded toward the season (season.grade; season_mode "off": unchanged)."""
+        """rgb graded toward the season (season.grade; season_mode "off": unchanged), and under snow from November
+        (season.snow; "winter": full)."""
         if self.season_mode in (None, "off", "summer"):
             return rgb
         lat, lon = where.grid(self.SEASON_GRID - 1)             # row 0 = north
-        amounts = season.amounts_for(self.season_mode, float(np.mean(lat)))
-        if not any(v > 0 for v in amounts.values()):
+        here = float(np.mean(lat))
+        amounts = season.amounts_for(self.season_mode, here)
+        snow = season.snow_amount_for(self.season_mode, here)
+        if snow <= 0.0 and not any(v > 0 for v in amounts.values()):
             return rgb
         xm, ym = season.world_metres(lat, lon)
-        return season.grade(rgb, xm, ym, amounts)       # (the grid, upscaled to the texels in the kernel)
+        if any(v > 0 for v in amounts.values()):
+            rgb = season.grade(rgb, xm, ym, amounts)       # (the grid, upscaled to the texels in the kernel)
+        if snow > 0.0:
+            rgb = season.snow(rgb, xm, ym, snow)
+        return rgb
 
     def _render(self, where, px, pending=None, skip_lazy=False):
         """Texture of a square (where: EnuSquare: [x0, x0+size] x [y0, y0+size] of an anchor's frame; MercSquare),

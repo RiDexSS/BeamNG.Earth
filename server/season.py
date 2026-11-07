@@ -11,9 +11,12 @@ they agree):
   2. grade: from that summer look toward the season of the date at the place (season_amounts): fall turns the
      tree canopy yellow / orange / rust in patches (world-anchored noise, so tiles and anchors agree) and yellows
      everything green a little; the share of turned trees grows with the amount. Winter and spring: later.
+  3. snow: from November to March (snow_amount) the ground under a cold white cover, the photo's shading kept and its
+     colour nearly gone, water (blue) left bare (snow; BNE_SNOW scales it, --season winter makes it full).
 Pure functions of their inputs (no state); numpy, and the grade in Rust (earthfast.season_img).
 """
 import datetime
+import os
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -138,3 +141,111 @@ def world_metres(lat, lon):
     lat = np.asarray(lat, np.float64)
     return (np.asarray(lon, np.float64) * M_PER_DEG * np.cos(np.radians(lat))).astype(np.float32), \
         (lat * M_PER_DEG).astype(np.float32)
+
+
+# Snow: the ground under a white cover from November (the user, 2026-11-06: "it's snowing here and the game's
+# surroundings are still summer"). A grade of the photo, not a new photo: from Nov 1 to Mar 1, melting by Mar 21 (the
+# southern hemisphere half a year later, the tropics without it), patchy (world-anchored noise) with the photo's own
+# shading kept; water stays bare. The 3D trees are seasonlook.lua's winter tints.
+SNOW_START_DOY = 305        # Nov 1
+SNOW_FULL_DAYS = 3          # ... to full cover by Nov 4
+SNOW_MELT_DOY = 60          # Mar 1: melting starts
+SNOW_MELT_DAYS = 20.0       # ... and the last of it is gone by Mar 21
+SNOW_RGB = (238, 243, 250)  # cold white, a little blue
+SNOW_WHITE = 240.0          # its brightness (the photo's own shading works on it)
+SNOW_GAMMA = 0.5            # ... the large-scale shading compressed: dark woods show through, snow stays bright
+SNOW_FLOOR = 0.60           # share of the brightness kept at the darkest texels
+SNOW_DETAIL = 0.7           # share of the photo's fine texture kept (crowns, roofs, hedges: not a flat white)
+SNOW_DESAT = 0.9            # share of the photo's colour the cover takes away
+SNOW_WATER_B = 10           # blue above red by this much: water, left bare
+SNOW_PATCH_M = 24.0         # m: the bare patches' scale
+SNOW_COVER = (0.93, 1.0)    # cover at the noise's lowest and highest (thin spots over the ground)
+SNOW_STRENGTH = float(os.environ.get("BNE_SNOW", "1.0"))    # 0: off; 1: as tuned
+
+
+def snow_amount(date, lat):
+    """0..1 at a date (datetime.date) and latitude: the share of the ground the snow covers (0 in the tropics, the
+    southern hemisphere half a year later). Pure."""
+    if abs(lat) < 23.0 or SNOW_STRENGTH <= 0.0:
+        return 0.0
+    doy = date.timetuple().tm_yday
+    if lat < 0:
+        doy = (doy + 182) % 365
+    d = (doy - SNOW_START_DOY) % 365                 # days since Nov 1
+    full = SNOW_FULL_DAYS
+    melt = (SNOW_MELT_DOY - SNOW_START_DOY) % 365    # Mar 1, the first day of the thaw
+    if d <= full:                                    # (Nov 1: 0.75, Nov 4: 1)
+        a = 0.75 + 0.25 * d / float(full)
+    elif d <= melt:
+        a = 1.0
+    elif d <= melt + SNOW_MELT_DAYS:
+        a = 1.0 - (d - melt) / SNOW_MELT_DAYS
+    else:
+        a = 0.0
+    return float(max(0.0, min(1.0, a)))
+
+
+def snow_amount_for(mode, lat, today=None):
+    """snow_amount for --season: "auto" (today's date), "winter" (full), the rest without it. Pure."""
+    if mode == "winter":
+        return 1.0 if SNOW_STRENGTH > 0.0 else 0.0
+    if mode == "auto":
+        return snow_amount(today or datetime.date.today(), lat)
+    return 0.0
+
+
+def _grid(a, w, h):
+    """a at the texture's (h, w): itself when it already is, a grid over the texture resized (Pillow, as
+    grade's kernel does)."""
+    a = np.asarray(a, np.float32)
+    if a.ndim == 2 and a.shape == (h, w):
+        return a
+    return np.asarray(Image.fromarray(a.astype(np.float32), "F").resize((w, h), Image.BILINEAR))
+
+
+def _noise01(x, y):
+    """A hash of the world's cells: 0..1, the same everywhere the world is (a fixed seed would not keep tiles and
+    anchors agreeing). Integer mix (no sin: 2 million of them a texture were 140 ms)."""
+    h = np.asarray(x, np.int64) * 374761393 + np.asarray(y, np.int64) * 668265263
+    h = h.astype(np.uint64)
+    h ^= h >> np.uint64(13)
+    h *= np.uint64(1274126177)
+    h ^= h >> np.uint64(16)
+    return ((h >> np.uint64(40)).astype(np.float32) / 16777215.0)
+
+
+def _patch_noise(xm, ym, w, h):
+    """0..1 cover noise of the world (SNOW_PATCH_M), computed at the grid it is given and resized to the texture: the
+    same patches for every tile and anchor, and smooth whatever the texel size (per-texel cells at 9 m texels were a
+    speckle)."""
+    x = np.asarray(xm, np.float32)
+    y = np.asarray(ym, np.float32)
+    n = 0.65 * _noise01(np.floor(x / SNOW_PATCH_M), np.floor(y / SNOW_PATCH_M))
+    n += 0.35 * _noise01(np.floor(x / (SNOW_PATCH_M / 2.6)), np.floor(y / (SNOW_PATCH_M / 2.6)))
+    return n if n.shape == (h, w) else _grid(n, w, h)
+
+
+def snow(rgb, xm, ym, amount):
+    """rgb (uint8 (h, w, 3), the season's look) under a snow cover of amount 0..1: cold white over the photo, its
+    shading kept (hills, shadows, woods stay darker), its colour nearly gone; patchy (a world-anchored noise of
+    SNOW_PATCH_M: thin spots and bare ground), water (blue) left bare. xm, ym: the texels' world metres (h, w), or a
+    grid over the texture, as in grade(). Pure."""
+    amount = float(amount) * SNOW_STRENGTH
+    if amount <= 0.01:
+        return rgb
+    im = np.asarray(rgb, np.uint8)[..., :3]
+    h, w = im.shape[:2]
+    f = im.astype(np.float32)
+    cover = amount * (SNOW_COVER[0] + (SNOW_COVER[1] - SNOW_COVER[0]) * _patch_noise(xm, ym, w, h))
+    y = f[..., 0] * 0.299 + f[..., 1] * 0.587 + f[..., 2] * 0.114
+    lo = np.asarray(Image.fromarray(np.clip(y, 0, 255).astype(np.uint8), "L")
+                    .filter(ImageFilter.GaussianBlur(max(2.0, min(h, w) / 40.0))), np.float32)
+    tone = np.power(np.clip(lo / 255.0, 0.0, 1.0), SNOW_GAMMA)
+    bright = SNOW_WHITE * (SNOW_FLOOR + (1.0 - SNOW_FLOOR) * tone) + (y - lo) * SNOW_DETAIL
+    k = cover[..., None]
+    out = y[..., None] + (bright - y)[..., None] * k                 # (the cover, the relief kept)
+    out = out + (f - y[..., None]) * (1.0 - SNOW_DESAT * k)         # (the photo's colour, nearly gone)
+    out = out + (np.asarray(SNOW_RGB, np.float32) - SNOW_WHITE) * k  # (cold white, a little blue)
+    water = (f[..., 2] > f[..., 0] + SNOW_WATER_B) & (f[..., 2] > f[..., 1])
+    out = np.where(water[..., None], f, out)
+    return np.clip(np.rint(out), 0, 255).astype(np.uint8)
