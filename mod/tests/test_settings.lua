@@ -428,23 +428,6 @@ do
   T.check(on.serverCores and on.serverPriority, 'both on the settings page')
 end
 
--- the ground's roughness and a forest track's damage (World page; server cpupin.player_settings exports them, grading
--- reads the BNE_* at its start): on the page, the defaults as tuned on 2026-11-07
-do
-  local st = require('beamngEarth/settings')
-  T.check(st.SCHEMA.forestRoughness.kind == 'number' and st.SCHEMA.forestRoughness.default == 0.35,
-    'forestRoughness: 0.35 m by default')
-  T.check(st.validate('forestRoughness', 7) == 1 and st.validate('trackFacets', -1) == 0
-    and st.validate('trackHoleWidth', 2) == 1, 'the ground knobs are clamped')
-  T.check(st.SCHEMA.trackWaves.default == 0 and st.SCHEMA.trackFacets.default == 0.08,
-    'a forest track: facets, no soft waves')
-  local on = {}
-  for _, k in ipairs(st.ORDER) do on[k] = true end
-  for _, k in ipairs({ 'forestRoughness', 'trackFacets', 'trackHoles', 'trackHoleWidth', 'trackWaves' }) do
-    T.check(on[k], k .. ' on the settings page')
-  end
-end
-
 -- the 3dmr.eu models' switch: on the page, on by default (server cpupin.player_settings reads it when it starts)
 do
   local st = require('beamngEarth/settings')

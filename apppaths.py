@@ -18,8 +18,6 @@ import sys
 IS_WIN = os.name == "nt"
 APP_SETTINGS = "app.json"       # in data_dir(): the launcher's own remembered choices
 PICK_S = 900                    # a file window left open this long: given up (the caller asks for text)
-SERVER_RESTART_CODE = 75        # the world server's exit code when the ground settings changed: the launcher starts a
-                                # new server, which reads them (settingswatch.py; the mod reconnects and resyncs)
 GAME_WIN = "BeamNG.drive.exe"
 GAME_LINUX = os.path.join("BinLinux", "BeamNG.drive.x64")
 

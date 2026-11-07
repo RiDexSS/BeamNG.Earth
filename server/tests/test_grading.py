@@ -1046,27 +1046,6 @@ class DirtEndsTest(unittest.TestCase):
         xy = np.stack([np.arange(0.0, 200.0, 2.0), np.zeros(100)], 1)
         self.assertIsNone(grading.dirt_bumps(xy, spec, 100))
 
-class ApplyEnvTest(unittest.TestCase):
-    """The settings page's ground knobs reach grading as BNE_* after the modules are imported
-    (cpupin.apply_player_settings; earthd's and blockworker's starts)."""
-
-    def test_knobs_re_read(self):
-        names = ("TERRAIN_ROUGH_M", "TERRAIN_BUMPS_ON", "DIRT_NODE_M", "DIRT_TRACK_SHARE", "DIRT_TRACK_W",
-                 "DIRT_TRACK_WAVE_SHARE")
-        old = tuple(getattr(grading, n) for n in names)
-        try:
-            grading.apply_env({"BNE_TERRAIN_BUMP": "0.7", "BNE_TERRAIN_BUMPS": "off", "BNE_DIRT_NODE": "0.2",
-                               "BNE_DIRT_TRACK": "2", "BNE_DIRT_TRACK_W": "0.3", "BNE_DIRT_TRACK_WAVE": "0.5"})
-            self.assertEqual(tuple(getattr(grading, n) for n in names), (0.7, False, 0.2, 2.0, 0.3, 0.5))
-            grading.apply_env({})           # (nothing set: what it is now stays)
-            self.assertEqual(grading.DIRT_NODE_M, 0.2)
-            grading.apply_env({"BNE_DIRT_NODE": "bad"})
-            self.assertEqual(grading.DIRT_NODE_M, 0.2)
-        finally:
-            for n, v in zip(names, old):
-                setattr(grading, n, v)
-
-
 class TerrainBumpsTest(unittest.TestCase):
     """The land off the roads is uneven in the forests only (the user, 2026-11-07: "leave the unevenness only in the
     forests, the fields and the rest flat")."""
@@ -1155,6 +1134,21 @@ class DirtFacetTest(unittest.TestCase):
         lane = grading.dirt_bumps(xy, roads.Spec(4.0, "dirt", False, "residential"), len(xy))
         main = grading.dirt_bumps(xy, roads.Spec(7.0, "dirt", False, "secondary"), len(xy))
         self.assertLess(float(np.std(np.diff(main[60:-60]))), 0.5 * float(np.std(np.diff(lane[60:-60]))))
+
+    def test_a_track_is_rough_in_runs_not_one_washboard(self):
+        # (the whole track as one washboard read as waves from end to end: the user, 2026-11-08, "волнами идет ...
+        # нужны просто ухабы": rough runs of humps, calmer stretches between them)
+        xy = self.xy(n=1200)
+        plan = grading._plan(xy, np.full(len(xy), 100.0), roads.Spec(3.5, "dirt", False, "track"))
+        d = plan.z - 100.0
+        w = 6                                            # 12 m windows
+        rms = np.array([float(np.std(d[i:i + w])) for i in range(0, len(d) - w + 1, w)])
+        self.assertGreater(float((rms > 0.12).mean()), 0.15, "rough runs of humps")
+        self.assertLess(float((rms > 0.12).mean()), 0.8, "not the whole track")
+        self.assertGreater(float((rms < 0.06).mean()), 0.1, "calmer stretches between them")
+        self.assertGreater(float(np.abs(d).max()), 0.5, "ухабы, not ripples")
+        low = np.convolve(d, np.ones(20) / 20, mode="same")      # 40 m moving average
+        self.assertLess(float(np.std(low)), 0.06, "no long waves along the track")
 
 
 if __name__ == "__main__":
