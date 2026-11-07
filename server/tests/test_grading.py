@@ -407,12 +407,16 @@ class DirtTest(unittest.TestCase):
         self.assertIsNone(grading.bank(xy, roads.Spec(7.0, "paved", False, "residential")))
 
     @unittest.skipIf(grading.DIRT_ROUGH <= 0.0, "BNE_DIRT_BUMP 0")
-    def test_a_main_dirt_road_is_softer_than_a_lane(self):
-        xy = self.xy()
+    def test_a_minor_dirt_road_is_barely_worn(self):
+        # (the runs, as on a track, but a few centimetres: the user, 2026-11-08, "совсем еле ощутимые")
+        xy = self.xy(n=1200)
         lane = grading.dirt_bumps(xy, roads.Spec(4.0, "dirt", False, "residential"), len(xy))
-        main = grading.dirt_bumps(xy, roads.Spec(7.0, "dirt", False, "secondary"), len(xy))
-        self.assertGreater(float(np.std(lane)), 0.05, "a lane has holes in it")
-        self.assertLess(float(np.std(main)), 0.5 * float(np.std(lane)), "a road signed as a main one stays smoother")
+        self.assertLess(float(np.std(lane)), 0.06, "a few cm, felt over the wheel at most")
+        self.assertGreater(float(np.abs(lane).max()), 0.05, "but something to feel")
+        w = 6                                                # 12 m windows
+        rms = np.array([float(np.std(lane[i:i + w])) for i in range(0, len(lane) - w + 1, w)])
+        self.assertGreater(float((rms > 0.08).mean()), 0.0, "worn runs")
+        self.assertLess(float((rms > 0.08).mean()), 0.3, "most of the lane is smooth")
 
     @unittest.skipIf(grading.DIRT_ROUGH <= 0.0, "BNE_DIRT_BUMP 0")
     def test_a_forest_track_is_the_worst(self):
@@ -1129,11 +1133,14 @@ class DirtFacetTest(unittest.TestCase):
         self.assertAlmostEqual(float(plan.z[0]), 100.0, places=6)
         self.assertAlmostEqual(float(plan.z[-1]), 100.0, places=6)
 
-    def test_a_main_dirt_road_stays_smooth(self):
+    def test_a_minor_dirt_road_is_barely_felt(self):
         xy = self.xy()
         lane = grading.dirt_bumps(xy, roads.Spec(4.0, "dirt", False, "residential"), len(xy))
-        main = grading.dirt_bumps(xy, roads.Spec(7.0, "dirt", False, "secondary"), len(xy))
-        self.assertLess(float(np.std(np.diff(main[60:-60]))), 0.5 * float(np.std(np.diff(lane[60:-60]))))
+        track = grading.dirt_bumps(xy, roads.Spec(3.5, "dirt", False, "track"), len(xy))
+        self.assertLess(float(np.percentile(np.abs(np.diff(lane[60:-60])), 95)), 0.15,
+                        "a lane's facets are a few cm: barely a bump")
+        self.assertGreater(float(np.percentile(np.abs(np.diff(track[60:-60])), 95)), 0.4,
+                           "a track's are the point")
 
     def test_a_track_is_rough_in_runs_not_one_washboard(self):
         # (the whole track as one washboard read as waves from end to end: the user, 2026-11-08, "волнами идет ...
