@@ -801,11 +801,12 @@ DIRT_PATCH_W_M = (3.0, 7.0)
 DIRT_PATCH_D_M = (0.12, 0.22)
 # The odd deep pit (the "резкая волна" that used to come round at a set distance on a forest track: the user,
 # 2026-11-08: "через какой-то промежуток дороги волна резкая -- её нужно уменьшить вдвое и увеличить расстояние до
-# неё ... рандомизировать"): half as deep, and the gap to the next one drawn afresh each time, 150-400 m instead of a
-# pit every 150 m, so the road is not metronomed by them.
-DIRT_PIT_GAP_M = (150.0, 400.0)  # m between deep pits, along the road
+# неё ... рандомизировать", then "глубокую яму ещё уменьши и сделай расстояние от 800 до 2000м"): a quarter of its old
+# depth, and the gap to the next one drawn afresh each time, 800-2000 m, so a track is met by one about once a
+# kilometre -- something to notice, not a feature of the road.
+DIRT_PIT_GAP_M = (800.0, 2000.0)  # m between deep pits, along the road
 DIRT_PIT_W_M = (2.0, 4.5)
-DIRT_PIT_D_M = (0.15, 0.25)      # m its depth (half of 0.30-0.50)
+DIRT_PIT_D_M = (0.075, 0.125)    # m its depth (half of the halved 0.15-0.25, a quarter of the first 0.30-0.50)
 DIRT_STEP_MAX_M = float(os.environ.get("BNE_DIRT_STEP", "0.35"))   # m: the steepest step between two 2 m samples
 DIRT_STEP_TRACK = 1.8          # ... a forest track's own cap (this much of it: its humps are walls otherwise)
 DIRT_GIVEBACK_M = 40.0         # m: where a capped step's lost height is given back (a long smooth tilt, local)

@@ -465,9 +465,10 @@ class DirtTest(unittest.TestCase):
     @unittest.skipIf(grading.DIRT_ROUGH <= 0.0, "BNE_DIRT_BUMP 0")
     def test_the_deep_pit_is_halved_and_not_a_metronome(self):
         # (the "резкая волна" that came round at a set distance on a forest track: the user, 2026-11-08, "её нужно
-        # уменьшить вдвое и увеличить расстояние до неё ... рандомизировать". Its own contribution is what the pattern
-        # gains from DIRT_PIT_D_M: the draws are made either way, so the rest of the damage is the same)
-        xy = self.xy(n=2000)                                     # 4 km
+        # уменьшить вдвое и увеличить расстояние до неё ... рандомизировать", then "глубокую яму ещё уменьши и сделай
+        # расстояние от 800 до 2000м". Its own contribution is what the pattern gains from DIRT_PIT_D_M: the draws are
+        # made either way, so the rest of the damage is the same)
+        xy = self.xy(n=3000)                                     # 6 km
         sp = roads.Spec(3.5, "dirt", False, "track")
         whole = grading.dirt_bumps(xy, sp, len(xy))
         saved = grading.DIRT_PIT_D_M
@@ -477,10 +478,11 @@ class DirtTest(unittest.TestCase):
         finally:
             grading.DIRT_PIT_D_M = saved
         pit = whole - rest
-        low = [k for k in range(1, len(pit) - 1) if pit[k] < pit[k - 1] and pit[k] <= pit[k + 1] and pit[k] < -0.02]
-        self.assertLessEqual(len(low), 14, "4 km: a dozen pits at most (the old ones came 23 to the 4 km)")
-        self.assertLess(float(pit.min()), -0.1, "but they are still pits")
-        self.assertGreaterEqual(float(pit.min()), -0.25 * grading.DIRT_TRACK_SHARE - 1e-6, "half as deep as they were")
+        low = [k for k in range(1, len(pit) - 1) if pit[k] < pit[k - 1] and pit[k] <= pit[k + 1] and pit[k] < -0.005]
+        self.assertLessEqual(len(low), 7, "6 km: a handful at most (the old ones came 23 to the 4 km)")
+        self.assertLess(float(pit.min()), -0.05, "but they are still pits")
+        self.assertGreaterEqual(float(pit.min()), -grading.DIRT_PIT_D_M[1] * grading.DIRT_TRACK_SHARE - 1e-6,
+                                "a quarter of the old depth")
         gaps = np.diff([k * 2.0 for k in low])
         self.assertGreaterEqual(float(gaps.min()), grading.DIRT_PIT_GAP_M[0] - 1.0, "never closer than the gap allows")
         self.assertGreater(float(gaps.std()), 1.0, "and not a metronome")
