@@ -1959,6 +1959,44 @@ local function mark(name, t0)
 end
 -- The mod's parts' ms in the last whole frame (diagnostics: a per-frame probe; not to be changed by the caller)
 function M.frameMarks() return prevMarks end
+-- The GPU side of a big frame (the user, 2026-11-08: a long-standing stutter the log could not explain): the engine's
+-- GPU total and the time the CPU waited for the GPU tell a GPU-bound frame (real rendering: the passes add up) from a
+-- present/driver stall (a few ms of GPU work while the CPU sat in FramePresent: the compositor's buffers or the
+-- driver's queue, where a gamescope / X11-vs-Wayland test means something). Read on a big frame only, once per 2 s.
+M.GPU_STALL_MS = 250
+M.gpuAt = -math.huge                  -- (a field, not a local: this file is at LuaJIT's 200-local limit)
+function M.gpuOf(frameMs)
+  if frameMs < M.GPU_STALL_MS or st.clock - M.gpuAt < 2.0 then return nil end
+  M.gpuAt = st.clock
+  local out = {}
+  local r = rawget(_G, 'VariableRegistry')
+  for key, name in pairs({ ['$fps::waitForGPU'] = 'waitForGPU', ['$fps::gpuTime'] = 'gpuTime',
+                           ['$fps::cpuTime'] = 'cpuTime' }) do
+    local v
+    if r and r.get then local ok; ok, v = pcall(r.get, key, -1); if not ok then v = nil end end
+    v = tonumber(v)
+    if v and v >= 0 then out[name] = math.floor(v * 10 + 0.5) / 10 end
+  end
+  local dbg = Engine and Engine.Debug
+  if dbg and dbg.getGpuTimings then
+    local ok, data = pcall(dbg.getGpuTimings)
+    if ok and type(data) == 'table' then
+      local arr = {}
+      for k, v in pairs(data) do
+        v = tonumber(v)
+        if type(k) == 'string' and v and v > 0 then arr[#arr + 1] = { k, v } end
+      end
+      table.sort(arr, function(a, b) return a[2] > b[2] end)
+      for i = 1, math.min(4, #arr) do out[arr[i][1]] = math.floor(arr[i][2] * 10 + 0.5) / 10 end
+    end
+  end
+  local e = rawget(_G, 'Engine')
+  if e and e.getCurrentFpsLimitReason then
+    local ok, limits = pcall(e.getCurrentFpsLimitReason)
+    if ok and type(limits) == 'table' and limits.windowFocused == false then out['window unfocused'] = 1 end
+  end
+  return next(out) and out or nil
+end
 local function noteHitch(frameMs)
   local h = { ms = math.floor(frameMs + 0.5), at = math.floor(st.clock * 10 + 0.5) / 10, mod = {} }
   -- marks: the mod's parts in the frame that just ended (onUpdate swaps them to prevMarks after this call; reading
@@ -1976,6 +2014,7 @@ local function noteHitch(frameMs)
       for i = 1, math.min(6, #arr) do h.engine[arr[i][1]] = math.floor(arr[i][2] * 10 + 0.5) / 10 end
     end
   end
+  h.gpu = M.gpuOf(frameMs)
   hitches[#hitches + 1] = h
   if #hitches > M.HITCH_KEEP then table.remove(hitches, 1) end
   return h

@@ -45,5 +45,10 @@ T.check(#m >= 1 and m[1]:find('^perf minute %d+ fps, 1%% low') and m[1]:find('3 
 T.check(P.cause(1600, { mod = {}, engine = { FPSLimiter = 13 } }) == P.UNMEASURED,
   'a 1.6 s frame with 13 ms measured: not blamed on that part')
 T.check(P.cause(300, { mod = { terrainCommit = 280 }, engine = {} }) == 'terrainCommit 280', 'a part that explains it: named')
+lines = {}
+now = now + 3
+local g = P.frame(1200, now, ctx, { mod = {}, engine = { FramePresent = 1214 }, gpu = { waitForGPU = 3, Terrain = 1180 } }, nil, nil)
+T.check(#g == 1 and g[1]:find('| gpu: Terrain 1180', 1, true) and g[1]:find('gpu: Terrain 1180, waitForGPU 3', 1, true),
+  'the hitch line carries the GPU passes')
 T.check(#P.frame(0 / 0, now, ctx) == 0 and #P.frame(-1, now, ctx) == 0, 'bad frame times ignored')
 T.done('test_perflog')

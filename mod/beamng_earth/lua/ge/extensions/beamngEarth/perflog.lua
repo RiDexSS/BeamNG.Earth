@@ -2,8 +2,10 @@
 -- detecting any performance drops and where they occurred. So players who experience issues can send me their log").
 -- Fed every frame by core.lua; returns lines for the world server's log (server.log, the file players send, beside
 -- the server's own block timings) and the game's beamng.log:
---   perf hitch    a frame of HITCH_MS or more: where, how fast, the mod's parts and the engine's subsystems in it, and
---                 what the mod was doing (core's context: block swap, far tiles, roads, trees, holds, server backlog)
+--   perf hitch    a frame of HITCH_MS or more: where, how fast, the mod's parts and the engine's subsystems in it, the
+--                 engine's GPU passes and the time it waited for the GPU on a big one (core.gpuOf: a GPU-bound frame
+--                 from a present/driver stall), and what the mod was doing (core's context: block swap, far tiles,
+--                 roads, trees, holds, server backlog)
 --   perf drop     a WINDOW_S window under DROP_SHARE of the usual frame rate (the median of the last BASELINE_N
 --                 windows): the window's fps, its slowest frames, the mod's parts summed over it, the engine's mean
 --   perf back     the frame rate back over BACK_SHARE of the usual: how long the drop lasted, its lowest fps
@@ -48,6 +50,8 @@ M.top = top
 
 -- The cause named for a slow frame: its largest measured part (the mod's, else the engine's) when that part is at
 -- least CAUSE_SHARE of the frame; else UNMEASURED (a first-time load, the GPU driver, the OS: outside both timers).
+-- The GPU's own numbers are in the line's `gpu:` part, not here: the engine's FramePresent is where a stall shows,
+-- the passes say whether the GPU was drawing through it.
 M.CAUSE_SHARE = 0.25
 M.UNMEASURED = 'mostly outside the mod and engine timers (a load, the GPU driver or the system)'
 function M.cause(ms, hitch)
@@ -97,6 +101,7 @@ function M.frame(ms, now, ctx, hitch, mod, engine)
       local line = string.format('perf hitch %d ms %s', r0(ms), where(c))
       if hitch and next(hitch.mod or {}) then line = line .. ' | mod: ' .. top(hitch.mod, 5, 1) end
       if hitch and next(hitch.engine or {}) then line = line .. ' | engine: ' .. top(hitch.engine, 5, 1) end
+      if hitch and next(hitch.gpu or {}) then line = line .. ' | gpu: ' .. top(hitch.gpu, 6, 0.1) end
       if M.cause(ms, hitch) == M.UNMEASURED then line = line .. ' | ' .. M.UNMEASURED end
       if c.doing and c.doing ~= '' then line = line .. ' | doing: ' .. c.doing end
       if skipped > 0 then line = line .. string.format(' | (%d more hitches since the last line)', skipped) end
