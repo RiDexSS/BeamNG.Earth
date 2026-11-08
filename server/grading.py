@@ -780,7 +780,9 @@ DIRT_TRACK_EDGE_M = 2.5         # m: a run's ramps in and out (its humps start a
 DIRT_TRACK_QUIET = 0.15         # a calmer stretch keeps this share of the triangles: a track is never glass
 DIRT_HUMP_EVERY_M = 3.5         # m of a rough run per hump (a raised one, or a dip: see DIRT_HUMP_DIP)
 DIRT_HUMP_W_M = (2.5, 5.0)      # m: a hump's width
-DIRT_HUMP_D_M = (0.18, 0.42)    # m: its height -- a hump to be thrown over, not a wave
+DIRT_HUMP_D_M = (0.09, 0.21)    # m: its height -- a hump to be thrown over, not a wave (half of 0.18-0.42: still too much
+                                # roll from the driver's seat on a forest track, the user, 2026-11-08: "давай волны на
+                                # лесных дорогах уменьшим вдвое по высоте")
 DIRT_HUMP_DIP = 0.45            # a share of the humps are dips, this much deep (the pits are the deep ones)
 # A minor dirt road (a residential or unclassified gravel lane) is worn the same way -- runs of damage, calmer stretches
 # between them -- but barely: a few cm, noticed only over the wheel (the user, 2026-11-08: "по тому же принципу, но
