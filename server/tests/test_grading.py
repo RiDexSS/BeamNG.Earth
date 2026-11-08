@@ -415,8 +415,10 @@ class DirtTest(unittest.TestCase):
         self.assertGreater(float(np.abs(lane).max()), 0.05, "but something to feel")
         w = 6                                                # 12 m windows
         rms = np.array([float(np.std(lane[i:i + w])) for i in range(0, len(lane) - w + 1, w)])
-        self.assertGreater(float((rms > 0.08).mean()), 0.0, "worn runs")
-        self.assertLess(float((rms > 0.08).mean()), 0.3, "most of the lane is smooth")
+        # (5 cm rms over 12 m: the base was the deep pits, and those are now half as deep and 150-400 m apart: the lane's
+        # own damage -- a few cm of potholes, humps and facets -- is what a worn run is)
+        self.assertGreater(float((rms > 0.05).mean()), 0.0, "worn runs")
+        self.assertLess(float((rms > 0.05).mean()), 0.3, "most of the lane is smooth")
 
     @unittest.skipIf(grading.DIRT_ROUGH <= 0.0, "BNE_DIRT_BUMP 0")
     def test_a_forest_track_is_the_worst(self):
@@ -449,6 +451,39 @@ class DirtTest(unittest.TestCase):
         self.assertEqual(len(b), len(xy))
         self.assertGreater(float(np.std(b)), 0.01, "now the left side is low, now the right")
         self.assertLessEqual(float(np.abs(b).max()), 2.0 * grading.DIRT_BANK_M, "a lean, not a wall")
+
+    @unittest.skipIf(grading.DIRT_BANK_M <= 0.0, "BNE_DIRT_BANK 0")
+    def test_a_main_dirt_road_leans_half_as_much(self):
+        # (the user, 2026-11-08: "у главных/второстепенных грунтовых дорог уменьши угол наклона вдвое": a signed gravel
+        # road is driven at speed, a track and a lane lean as before)
+        xy = self.xy(n=1200)
+        lane = grading.bank(xy, roads.Spec(4.0, "dirt", False, "residential"))
+        main = grading.bank(xy, roads.Spec(5.0, "dirt", False, "secondary"))
+        self.assertAlmostEqual(float(np.max(np.abs(main))) / float(np.max(np.abs(lane))),
+                               grading.DIRT_BANK_MAJOR_SHARE, places=2, msg="half the lane's lean")
+
+    @unittest.skipIf(grading.DIRT_ROUGH <= 0.0, "BNE_DIRT_BUMP 0")
+    def test_the_deep_pit_is_halved_and_not_a_metronome(self):
+        # (the "резкая волна" that came round at a set distance on a forest track: the user, 2026-11-08, "её нужно
+        # уменьшить вдвое и увеличить расстояние до неё ... рандомизировать". Its own contribution is what the pattern
+        # gains from DIRT_PIT_D_M: the draws are made either way, so the rest of the damage is the same)
+        xy = self.xy(n=2000)                                     # 4 km
+        sp = roads.Spec(3.5, "dirt", False, "track")
+        whole = grading.dirt_bumps(xy, sp, len(xy))
+        saved = grading.DIRT_PIT_D_M
+        grading.DIRT_PIT_D_M = (0.0, 0.0)
+        try:
+            rest = grading.dirt_bumps(xy, sp, len(xy))
+        finally:
+            grading.DIRT_PIT_D_M = saved
+        pit = whole - rest
+        low = [k for k in range(1, len(pit) - 1) if pit[k] < pit[k - 1] and pit[k] <= pit[k + 1] and pit[k] < -0.02]
+        self.assertLessEqual(len(low), 14, "4 km: a dozen pits at most (the old ones came 23 to the 4 km)")
+        self.assertLess(float(pit.min()), -0.1, "but they are still pits")
+        self.assertGreaterEqual(float(pit.min()), -0.25 * grading.DIRT_TRACK_SHARE - 1e-6, "half as deep as they were")
+        gaps = np.diff([k * 2.0 for k in low])
+        self.assertGreaterEqual(float(gaps.min()), grading.DIRT_PIT_GAP_M[0] - 1.0, "never closer than the gap allows")
+        self.assertGreater(float(gaps.std()), 1.0, "and not a metronome")
 
     @unittest.skipIf(grading.DIRT_BANK_M <= 0.0, "BNE_DIRT_BANK 0")
     def test_the_lean_fades_out_at_the_ends(self):
