@@ -763,7 +763,8 @@ DIRT_SOFT_CLASSES = {"motorway", "trunk", "primary", "secondary", "tertiary"}
 # грунтовые дороги. Вот давай возьмём их и в 1,5 раза усложним"): its potholes, patches, humps, soft undulation and
 # the surface's own triangles all at one share, and in its own rough runs (more of the track is worn than of a lane).
 # "you cannot even get up to speed on it" (the user, 2026-11-02)
-DIRT_TRACK_SHARE = float(os.environ.get("BNE_DIRT_TRACK", "1.5"))   # of the reference road's damage
+DIRT_TRACK_SHARE = float(os.environ.get("BNE_DIRT_TRACK", "2.25"))  # of the reference road's damage (1.5 was still
+                                                                     # soft in the driver's seat: "увеличим ещё в 1.5 раза")
 DIRT_VERTEX_STEP = 2.0          # m between a dirt road's plan vertices (4 m smoothed a pothole away)
 DIRT_NODE_M = float(os.environ.get("BNE_DIRT_NODE", "0.08"))  # m: the surface's own triangles, each plan vertex tilted
                                                               # its own way (the user, 2026-11-07: a track is hard to

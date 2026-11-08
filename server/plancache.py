@@ -61,8 +61,8 @@ def start_run(cache_dir):
 # The plans' output format: their key in the revisit cache (kept across updates) and in baked packs (bakepack.py), in
 # place of the code hash. Bump it whenever a change makes other plans (grading, its inputs' rules), or players keep the
 # old ones; tests/test_bake_formats.py fails until it is bumped (its fixture's digest is stored with the number).
-PLANS_FORMAT = 19     # 19: a forest track is the reference dirt road (an ordinary lane) 1.5x over, not a road
-                      #     of its own; 18: the deep pits are a quarter as deep, 800-2000 m apart; 17: a
+PLANS_FORMAT = 20     # 20: that 1.5x is 2.25x; 19: a forest track is the reference dirt road (an ordinary lane)
+                      #     1.5x over, not a road of its own; 18: the deep pits are a quarter as deep, 800-2000 m apart; 17: a
                       #     main/secondary dirt road's lean is halved, the deep pits are half as deep and further
                       #     apart; 16: a forest track's humps are half as tall (0.09-0.21 m); 15: that
                       #     embankment is 1 m (the user, 2026-11-08: "давай перепад с полуметра сделаем метр"); 14: a road in the open country rides a 0.5 m embankment (at grade in a village, by houses, at a junction, on a bridge's approach and in a wood for a dirt road); 13: a minor dirt road worn in runs too, barely (a track's 12: its damage in rough runs of humps, not one washboard end to end); 11: pass roads with two lanes graded as mountain roads again (the Stelvio); 10: worn dirt roads (PR #677: damage, lean, 2 m vertices, 2.5 m smoothing of minor dirt); 9: roundabout rings level across (RING_LEVEL_ON); 8: PR #753 (a deck end's approaches rise with it, slip roads tied to their overpass road); 7: PR #471 and #686 lanes (wider / narrower roads graded); 6: the dip under a deck takes its ends on their embankments (#684's fill); 5: one half width a bridge (each was appended twice: under-deck ground and carriageways read the wrong bridge's); 4: junction pads, steep side-road ramps, rail bridges the DEM predates (PR #482/#671); 3:
