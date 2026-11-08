@@ -94,11 +94,13 @@ ROAD_LIFT = 0.04            # m the physics ground is raised under roads (see Gr
 # A road through the open country rides its own low embankment (the user, 2026-11-08: "проселочные дороги в полях,
 # асфальтированные дороги в лесах/полях ... на пол метра выше от ландшафта, как оно часто бывает в реальности ...
 # если рядом дома и прочее, то дорога должна быть вровень"): its profile is raised EMBANK_M over the ground where the
-# land is open, and the grading's own transition (T_MIN 5 m) then makes the shoulder down to it -- 0.5 m over 5 m, a
-# grassy verge. In a village, by houses, on water, on snow and in a wood (a dirt road is cut into a wood, a paved one
-# is embanked through it) it lies at grade, as at a junction, a bridge's approach and a loose end (EMBANK_END_M).
+# land is open, and the grading's own transition (T_MIN 5 m) then makes the shoulder down to it -- 1 m over 5 m, a
+# grassy verge (the user, 2026-11-08: "давай перепад с полуметра сделаем метр": steeper than a real field lane's
+# 1:10, but the shoulder is the grading's own and widening it means a Rust change to grade_points). In a village, by
+# houses, on water, on snow and in a wood (a dirt road is cut into a wood, a paved one is embanked through it) it lies
+# at grade, as at a junction, a bridge's approach and a loose end (EMBANK_END_M).
 EMBANK_ON = os.environ.get("BNE_EMBANK", "on") != "off"
-EMBANK_M = float(os.environ.get("BNE_EMBANK_M", "0.5"))       # m its profile is raised over the open land
+EMBANK_M = float(os.environ.get("BNE_EMBANK_M", "1.0"))       # m its profile is raised over the open land
 EMBANK_END_M = 40.0         # m over which it comes down to grade at a junction / bridge end / loose end
 EMBANK_SAMPLE_M = 12.0      # m between the land-cover reads along the road (linear in between: the profile's own
                             # smoothing, 12-40 m by class, rounds the rest)

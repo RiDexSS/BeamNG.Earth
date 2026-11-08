@@ -85,7 +85,7 @@ FOREST = 10
 FOREST_CELL_M = 4.0
 FOREST_CELLS_MAX = 1000000  # the lattice's nodes at most (~4 x 4 km): points farther apart than that are read one by one
 # The open country a road rides its own low embankment through (grading.embank_lift; the user, 2026-11-08: field lanes
-# and paved roads in forests and fields sit ~0.5 m over the ground, in a village they lie at grade). WorldCover's
+# and paved roads in forests and fields sit ~1 m over the ground, in a village they lie at grade). WorldCover's
 # classes: tree, shrub, grass, crop and bare ground are open; built-up (anywhere within EMBANK_MARGIN_M of the road),
 # water, wetland, snow and ice, and the moss are not.
 OPEN_CLASSES = (10, 20, 30, 40, 60)
