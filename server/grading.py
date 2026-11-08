@@ -758,17 +758,17 @@ DIRT_MAJOR_SHARE = float(os.environ.get("BNE_DIRT_MAJOR", "0.2"))  # a MAIN dirt
 # which dirt roads count as "main" (the ones kept soft): the classes a country road is signed as, not just the
 # motorway ones (a mapped `secondary` gravel road is a main road where you drive it at 80 km/h)
 DIRT_SOFT_CLASSES = {"motorway", "trunk", "primary", "secondary", "tertiary"}
-# a forest track (highway=track) is worse than any of them: "you cannot even get up to speed on it" (the user, 2026-11-02)
-DIRT_TRACK_SHARE = float(os.environ.get("BNE_DIRT_TRACK", "1.5"))
-DIRT_TRACK_WAVE_SHARE = float(os.environ.get("BNE_DIRT_TRACK_WAVE", "0.0"))   # ... and no soft undulation at all: the
-                                                                              # long waves were the "american rollercoaster";
-                                                                              # the damage is the triangles (DIRT_NODE_M)
+# A forest track (highway=track) is the reference dirt road -- an ordinary mapped gravel road, a residential or
+# unclassified lane (DIRT_MINOR_SHARE) -- 1.5x over, part for part (the user, 2026-11-08: "у нас уже есть эталонные
+# грунтовые дороги. Вот давай возьмём их и в 1,5 раза усложним"): its potholes, patches, humps, soft undulation and
+# the surface's own triangles all at one share, and in its own rough runs (more of the track is worn than of a lane).
+# "you cannot even get up to speed on it" (the user, 2026-11-02)
+DIRT_TRACK_SHARE = float(os.environ.get("BNE_DIRT_TRACK", "1.5"))   # of the reference road's damage
 DIRT_VERTEX_STEP = 2.0          # m between a dirt road's plan vertices (4 m smoothed a pothole away)
 DIRT_NODE_M = float(os.environ.get("BNE_DIRT_NODE", "0.08"))  # m: the surface's own triangles, each plan vertex tilted
                                                               # its own way (the user, 2026-11-07: a track is hard to
                                                               # pass because its triangles are distorted, not by long
                                                               # smooth waves -- "american rollercoaster")
-DIRT_TRACK_NODE = 3.4           # a forest track's share of it (a lane's: 1, a road signed as a main one's: DIRT_MAJOR_SHARE)
 DIRT_TRACK_W = float(os.environ.get("BNE_DIRT_TRACK_W", "0.45"))   # its holes are this share of a lane's width: narrow
                                                                   # dips between the facets, not 5 m bowls rolling the car
 # A forest track is damaged in rough runs, calmer stretches between them: its triangles and humps for a few dozen metres,
@@ -832,13 +832,14 @@ def dirt_bumps(xy, spec, n, ext=(0, 0), step=PROFILE_STEP):
     """What a dirt road is really like, one value per profile sample (n samples, ext: how many lie past the part's
     ends): a soft undulation and discrete damage -- potholes, broken patches (a step with soft edges), humps and the odd
     deep pit -- in worn runs with calmer stretches between them, placed from the road's own position, so every process
-    builds the same ones. A forest track's runs are hard (DIRT_TRACK_*); a minor dirt road's are a few centimetres,
-    barely felt (DIRT_MINOR_*); a road signed as a main one has none, just its gentle own wear (DIRT_MAJOR_SHARE).
+    builds the same ones. A forest track is a minor dirt road's damage DIRT_TRACK_SHARE over, part for part, in its own
+    rougher runs (DIRT_TRACK_*); a minor dirt road's are a few centimetres, barely felt (DIRT_MINOR_*); a road signed as
+    a main one has none, just its gentle own wear (DIRT_MAJOR_SHARE).
     None for a built road. The sizes are metres; BNE_DIRT_BUMP scales the lot (1: as here, 0: off)."""
     if spec.kind in roadsmod.BUILT or DIRT_ROUGH <= 0.0:
         return None
-    if spec.cls == "track":
-        scale, wave, node_share = DIRT_TRACK_SHARE, DIRT_TRACK_WAVE_SHARE, DIRT_TRACK_NODE
+    if spec.cls == "track":                         # (the reference road, DIRT_TRACK_SHARE over: every part of it)
+        scale = wave = node_share = DIRT_MINOR_SHARE * DIRT_TRACK_SHARE
         span = (DIRT_TRACK_RUN_M, DIRT_TRACK_GAP_M, DIRT_TRACK_EDGE_M, DIRT_TRACK_QUIET)
     elif spec.cls in DIRT_SOFT_CLASSES:
         scale = wave = node_share = DIRT_MAJOR_SHARE
