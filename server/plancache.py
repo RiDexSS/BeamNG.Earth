@@ -68,12 +68,22 @@ def start_run(cache_dir):
 # old ones; tests/test_bake_formats.py fails until it is bumped (its fixture's digest is stored with the number).
 PLANS_FORMAT = 23     # 23: worn dirt tuned on dev's centimetre base -- a forest track is the reference lane 2.25x over,
                       # in its own runs, with humps to be thrown over, a deep pit 800-2000 m off; a road in the open
-                      # country rides a 1 m embankment; 22: overpasses mapped in parts are one span and road ends within 2 m one dip node (#973, #983; still the same release as 21); 21: one bump for the 2026-11-08 PR batch: abandoned railways not graded (#953, #706), dirt roads on the coarse global elevation smoothed over DIRT_SIGMA_COARSE_M (#951, #835), rail viaduct decks' heights capped (#949), worn railway lines cut at motorways (#946, #918); 18: cutting probes located through grading.enu_to_ll_dense (heights moved < 0.1 mm); 17: PR #843 (restored highway and ramp shoulder widths); 16: walkway bridge spans cap the road under them (PR #842) and OSM busways graded (PR #836); 15: continuous subsea tunnel profiles and their approaches (PR #822, #792); 14: past an abutment end the ground falls away under a still-climbing deck (ABUT_UNDER_GRADE)
+                      # country rides a 1 m embankment; every worn dirt road leans half as much (0.2 -> 0.1 m/m); 22: overpasses mapped in parts are one span and road ends within 2 m one dip node (#973, #983; still the same release as 21); 21: one bump for the 2026-11-08 PR batch: abandoned railways not graded (#953, #706), dirt roads on the coarse global elevation smoothed over DIRT_SIGMA_COARSE_M (#951, #835), rail viaduct decks' heights capped (#949), worn railway lines cut at motorways (#946, #918); 18: cutting probes located through grading.enu_to_ll_dense (heights moved < 0.1 mm); 17: PR #843 (restored highway and ramp shoulder widths); 16: walkway bridge spans cap the road under them (PR #842) and OSM busways graded (PR #836); 15: continuous subsea tunnel profiles and their approaches (PR #822, #792); 14: past an abutment end the ground falls away under a still-climbing deck (ABUT_UNDER_GRADE)
                       # 13: centimetre-scale dirt wear and bounded edge displacement from random banking
                       # 12: dirt roads toned down (#783, #784; dev); PR #811's own 12: bounded, local dirt damage, independent of real
                       #     grades and DEM extensions
                       # 11: pass roads with two lanes graded as mountain roads again (the Stelvio); 10: worn dirt roads (PR #677: damage, lean, 2 m vertices, 2.5 m smoothing of minor dirt); 9: roundabout rings level across (RING_LEVEL_ON); 8: PR #753 (a deck end's approaches rise with it, slip roads tied to their overpass road); 7: PR #471 and #686 lanes (wider / narrower roads graded); 6: the dip under a deck takes its ends on their embankments (#684's fill); 5: one half width a bridge (each was appended twice: under-deck ground and carriageways read the wrong bridge's); 4: junction pads, steep side-road ramps, rail bridges the DEM predates (PR #482/#671); 3:
                       # bridge ends on embankments (#694), the ground under decks (#698), junction corridors (#682)
+PLANS_FORMAT = 20     # 20: every worn dirt road leans half as much (DIRT_BANK_M 0.2 -> 0.1 m/m)
+                      # 19: worn dirt tuned on dev's centimetre base -- a forest track is the reference lane 2.25x over,
+                      # in its own runs, with humps to be thrown over, a deep pit 800-2000 m off and a main dirt road
+                      # leaning half as much, and a road in the open country rides a 1 m embankment
+                      # 18: cutting probes located through grading.enu_to_ll_dense (heights moved < 0.1 mm); 17: PR #843
+                      #     (restored highway and ramp shoulder widths); 16: walkway bridge spans cap the road under them
+                      #     (PR #842) and OSM busways graded (PR #836); 15: continuous subsea tunnel profiles and their
+                      #     approaches (PR #822, #792); 14: past an abutment end the ground falls away under a
+                      #     still-climbing deck (ABUT_UNDER_GRADE); 13: centimetre-scale dirt wear and bounded edge
+                      #     displacement from random banking; 12: dirt roads toned down (#783, #784)
 
 
 def plans_format():

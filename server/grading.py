@@ -1249,7 +1249,10 @@ BANK_SIGMA_M = 12.0         # remove discrete box-window steps in cross slope, n
 RING_LEVEL_ON = os.environ.get("BNE_RING_LEVEL", "on") != "off"
 
 
-DIRT_BANK_M = float(os.environ.get("BNE_DIRT_BANK", "0.2"))   # cross slope a broken dirt road leans to (m per m)
+DIRT_BANK_M = float(os.environ.get("BNE_DIRT_BANK", "0.1"))   # cross slope a broken dirt road leans to (m per m:
+                                                              # 10 % -- half of 0.2, the user, 2026-11-09: "наклон
+                                                              # дорог в стороны у всех уменьши вдвое": 20 % rolled the
+                                                              # car across the track as the lean changed sides)
 DIRT_BANK_EDGE_M = float(os.environ.get("BNE_DIRT_BANK_EDGE", "0.6"))   # m: the most either edge is lifted or
                                 # dropped (local, not a wave across the whole road; wide gravel roads included)
 DIRT_BANK_MAJOR_SHARE = float(os.environ.get("BNE_DIRT_BANK_MAJOR", "0.5"))  # a main/secondary dirt road leans this
