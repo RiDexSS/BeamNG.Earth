@@ -2881,8 +2881,11 @@ class Server:
         return round(float(anchor.frame.geodetic_to_enu(la, lo, z)[2]), 3)
 
     def ground(self, frame, la, lo, z):
-        """blockworker.ground here: runways graded in, the sea floor carved, the land off the roads roughened."""
-        z = np.asarray(z, np.float64) + gradingmod.terrain_bumps(np.asarray(la, np.float64), np.asarray(lo, np.float64))
+        """blockworker.ground here: runways graded in, the sea floor carved, the land off the roads roughened in the
+        forests (surface.Surface.forest)."""
+        cover = self.surface.forest(la, lo) if self.surface is not None else None
+        z = np.asarray(z, np.float64) + gradingmod.terrain_bumps(np.asarray(la, np.float64), np.asarray(lo, np.float64),
+                                                                 cover)
         if self.airports is not None:
             z = self.airports.apply(la, lo, z)
         if self.sea is not None:
@@ -2902,6 +2905,8 @@ class Server:
                 if getattr(self, "plan_store", None) is None:
                     self.plan_store = gradingmod.PlanStore(
                         self.mapdata, lambda la, lo: self.dem.sample(la, lo, gradingmod.PROFILE_ZOOM), self.road_widths)
+                    if self.surface is not None:     # (the roads' embankment mask reads the same land cover)
+                        self.plan_store.surface = self.surface
                 grader = gradingmod.Grader(anchor.frame, self.mapdata, self.plan_store.elev, self.road_widths,
                                           store=self.plan_store)
                 grader.wet = self.sea.depth if self.sea is not None else None    # (no dams: underwater tunnels)
@@ -4347,7 +4352,8 @@ class Server:
             base = self.airports.wrap(self.dem) if self.airports is not None else self.dem
             if self.sea is not None:
                 base = seacarvemod.SeaDem(base, self.sea if lvl <= seacarvemod.CARVE_MAX_LEVEL else None)
-            src = gradingmod.GradedDem(base, g) if g is not None else base
+            src = gradingmod.GradedDem(base, g, self.surface.forest if self.surface is not None else None) \
+                if g is not None else base
             analyses = self.deshadow is not None or self.colormatch is not None
             if quick and analyses and self.far_pool is not None and self.imagery is not None and node is tile:
                 # the 3D map at a place not seen yet (photos still to come): the quick texture from the raw photos in
